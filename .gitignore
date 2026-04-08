@@ -141,3 +141,15 @@ code/Hash-Tables/
 data/stack-traces-*.csv
 data/frequent_stack_traces.csv
 data/similarity-measures-pairs.csv
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# Web prototype artifacts
+web-frontend/node_modules/
+web-frontend/dist/
+web-backend/target/
+web-backend/data/
+.m2/
+.npm-cache/
