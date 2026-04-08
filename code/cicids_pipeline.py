@@ -11,9 +11,11 @@ from sklearn.preprocessing import StandardScaler
 
 PROCESSED_DIRNAME = "cic_ids2017_processed"
 FLOWS_FILENAME = "flows.csv"
+FLOWS_TOKENS_FILENAME = "flows_tokens.csv"
 PAIRS_FILENAME = "pairs_train.csv"
 METADATA_FILENAME = "metadata.json"
 PREPROCESSOR_FILENAME = "preprocessor.pkl"
+VOCAB_FILENAME = "vocab.json"
 
 META_COLUMNS = ["sample_id", "Label", "source_file", "source_row_index"]
 
@@ -33,9 +35,11 @@ def default_processed_data_dir() -> str:
 def prepared_paths(output_dir: str) -> Dict[str, str]:
     return {
         "flows": os.path.join(output_dir, FLOWS_FILENAME),
+        "flows_tokens": os.path.join(output_dir, FLOWS_TOKENS_FILENAME),
         "pairs": os.path.join(output_dir, PAIRS_FILENAME),
         "metadata": os.path.join(output_dir, METADATA_FILENAME),
         "preprocessor": os.path.join(output_dir, PREPROCESSOR_FILENAME),
+        "vocab": os.path.join(output_dir, VOCAB_FILENAME),
     }
 
 
@@ -131,6 +135,106 @@ def _clean_numeric_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str], 
 
     cleaned = numeric[feature_cols].copy()
     return cleaned, feature_cols, {k: float(v) for k, v in fill_values.to_dict().items()}, dropped
+
+
+def _sequence_feature_candidates(feature_columns: List[str]) -> List[str]:
+    preferred = [
+        "Destination Port",
+        "Flow Duration",
+        "Total Fwd Packets",
+        "Total Backward Packets",
+        "Total Length of Fwd Packets",
+        "Total Length of Bwd Packets",
+        "Flow Bytes/s",
+        "Flow Packets/s",
+        "Packet Length Mean",
+        "Packet Length Std",
+        "SYN Flag Count",
+        "PSH Flag Count",
+        "ACK Flag Count",
+        "Down/Up Ratio",
+        "Average Packet Size",
+        "Init_Win_bytes_forward",
+        "Init_Win_bytes_backward",
+        "Active Mean",
+        "Idle Mean",
+    ]
+    selected = [name for name in preferred if name in feature_columns]
+    if len(selected) < min(12, len(feature_columns)):
+        for name in feature_columns:
+            if name not in selected:
+                selected.append(name)
+            if len(selected) >= 16:
+                break
+    return selected
+
+
+def _compute_bin_edges(series: pd.Series, n_bins: int) -> List[float]:
+    values = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna().to_numpy(dtype=np.float64)
+    if values.size == 0:
+        return [0.0, 1.0]
+    quantiles = np.linspace(0.0, 1.0, n_bins + 1)
+    edges = np.quantile(values, quantiles).astype(float).tolist()
+    deduped = [edges[0]]
+    for value in edges[1:]:
+        if value > deduped[-1]:
+            deduped.append(value)
+    if len(deduped) == 1:
+        deduped.append(deduped[0] + 1.0)
+    return deduped
+
+
+def _value_to_bin(value: float, edges: List[float]) -> int:
+    if value <= edges[0]:
+        return 0
+    if value >= edges[-1]:
+        return len(edges) - 2
+    return int(np.searchsorted(edges[1:-1], value, side="right"))
+
+
+def build_tokenized_flows(
+    raw_df: pd.DataFrame,
+    feature_columns: List[str],
+    n_bins: int = 8,
+) -> Tuple[pd.DataFrame, Dict[str, object]]:
+    sequence_features = _sequence_feature_candidates(feature_columns)
+    numeric_raw = pd.DataFrame(index=raw_df.index)
+    for col in sequence_features:
+        numeric_raw[col] = pd.to_numeric(raw_df[col], errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    bin_edges = {col: _compute_bin_edges(numeric_raw[col], n_bins=n_bins) for col in sequence_features}
+
+    token_lists: List[List[str]] = []
+    for row_index in range(raw_df.shape[0]):
+        row = raw_df.iloc[row_index]
+        tokens = [
+            f"label={_normalize_label(row['Label'])}",
+            f"source={str(row['source_file']).replace(' ', '_')}",
+        ]
+        for feature in sequence_features:
+            token_bin = _value_to_bin(float(numeric_raw.iloc[row_index][feature]), bin_edges[feature])
+            safe_name = feature.lower().replace(" ", "_").replace("/", "_").replace(".", "_")
+            tokens.append(f"{safe_name}=bin_{token_bin}")
+        token_lists.append(tokens)
+
+    vocab_tokens = sorted({token for tokens in token_lists for token in tokens})
+    token_to_id = {token: index + 2 for index, token in enumerate(vocab_tokens)}
+    vocab = {
+        "pad_token": "<PAD>",
+        "oov_token": "<OOV>",
+        "pad_id": 0,
+        "oov_id": 1,
+        "token_to_id": token_to_id,
+        "selected_features": sequence_features,
+        "bin_edges": bin_edges,
+        "max_sequence_length": max(len(tokens) for tokens in token_lists) if token_lists else 0,
+    }
+
+    tokens_df = raw_df[META_COLUMNS].copy()
+    tokens_df["Label"] = raw_df["Label"].astype(str)
+    tokens_df["token_sequence"] = [" ".join(tokens) for tokens in token_lists]
+    tokens_df["sequence_length"] = [len(tokens) for tokens in token_lists]
+    return tokens_df, vocab
 
 
 def _cosine_01(vector_a: np.ndarray, vector_b: np.ndarray) -> float:
@@ -248,6 +352,7 @@ def prepare_cicids_dataset(
 
     scaler = StandardScaler()
     scaled = scaler.fit_transform(numeric_df)
+    tokens_df, vocab = build_tokenized_flows(raw_df, feature_columns=feature_columns)
 
     flows_df = raw_df[META_COLUMNS].copy()
     flows_df["Label"] = raw_df["Label"].astype(str)
@@ -277,11 +382,14 @@ def prepare_cicids_dataset(
 
     paths = prepared_paths(output_dir)
     flows_df.to_csv(paths["flows"], index=False)
+    tokens_df.to_csv(paths["flows_tokens"], index=False)
     pairs_df.to_csv(paths["pairs"], index=False)
     with open(paths["metadata"], "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
     with open(paths["preprocessor"], "wb") as f:
         pickle.dump(preprocessor, f)
+    with open(paths["vocab"], "w", encoding="utf-8") as f:
+        json.dump(vocab, f, indent=2)
 
     return paths
 
@@ -302,6 +410,14 @@ def load_prepared_pairs(output_dir: Optional[str] = None) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def load_prepared_token_flows(output_dir: Optional[str] = None) -> pd.DataFrame:
+    output_dir = output_dir or default_processed_data_dir()
+    path = prepared_paths(output_dir)["flows_tokens"]
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Prepared token flows not found: {path}")
+    return pd.read_csv(path)
+
+
 def load_preprocessor(output_dir: Optional[str] = None) -> Dict[str, object]:
     output_dir = output_dir or default_processed_data_dir()
     path = prepared_paths(output_dir)["preprocessor"]
@@ -318,3 +434,29 @@ def load_metadata(output_dir: Optional[str] = None) -> Dict[str, object]:
         raise FileNotFoundError(f"Metadata not found: {path}")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_vocab(output_dir: Optional[str] = None) -> Dict[str, object]:
+    output_dir = output_dir or default_processed_data_dir()
+    path = prepared_paths(output_dir)["vocab"]
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Vocabulary not found: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def encode_token_sequence(token_sequence: str, vocab: Dict[str, object]) -> List[int]:
+    token_to_id = vocab["token_to_id"]
+    oov_id = int(vocab.get("oov_id", 1))
+    return [int(token_to_id.get(token, oov_id)) for token in str(token_sequence).split() if token]
+
+
+def build_sequence_matrix(tokens_df: pd.DataFrame, vocab: Dict[str, object], max_length: Optional[int] = None) -> np.ndarray:
+    sequence_ids = [encode_token_sequence(token_sequence, vocab) for token_sequence in tokens_df["token_sequence"].fillna("")]
+    max_length = int(max_length or vocab.get("max_sequence_length") or max((len(seq) for seq in sequence_ids), default=0))
+    matrix = np.zeros((len(sequence_ids), max_length), dtype=np.int32)
+    for row_index, sequence in enumerate(sequence_ids):
+        length = min(len(sequence), max_length)
+        if length:
+            matrix[row_index, :length] = np.asarray(sequence[:length], dtype=np.int32)
+    return matrix

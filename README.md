@@ -79,11 +79,16 @@ Our contribution is three-fold.
  4. (Optional) Run the notebooks in `code/notebooks/` if you prefer the original experimental setup.
 
 ## CIC-IDS-2017 network flow deduplication
-This repo now also supports CIC-IDS-2017 numeric flow logs in `MachineLearningCVE/` for near-duplicate retrieval.
+This repo now supports two CIC-IDS-2017 experiment paths in `MachineLearningCVE/`:
 
-1. Prepare processed flows and sampled training pairs:
+- `flow-mlp baseline`: numeric flow features + MLP + DeepLSH
+- `bigru-deeplsh`: tokenized log-style sequences + Bi-GRU + DeepLSH
+
+1. Prepare processed flow and sequence data:
 ```
 python code/run.py cicids-prepare --data-repo ./MachineLearningCVE --max-samples 12000 --max-pairs 20000
+python code/run.py cicids-prepare-flow --data-repo ./MachineLearningCVE --max-samples 12000 --max-pairs 20000
+python code/run.py cicids-prepare-seq --data-repo ./MachineLearningCVE --max-samples 12000 --max-pairs 20000
 ```
 
 2. Inspect label distribution:
@@ -92,21 +97,29 @@ python code/run.py cicids-list-labels
 python code/run.py cicids-list-labels --from-raw --data-repo ./MachineLearningCVE
 ```
 
-3. Train the CIC-IDS DeepLSH encoder and build hash tables:
+3. Train the CIC-IDS MLP baseline and Bi-GRU paper model:
 ```
 python code/run.py cicids-train --data-repo ./MachineLearningCVE --epochs 10 --batch-size 256
+python code/run.py cicids-train-mlp --data-repo ./MachineLearningCVE --epochs 10 --batch-size 256
+python code/run.py cicids-train-bigru --data-repo ./MachineLearningCVE --epochs 10 --batch-size 128
 ```
 
 4. Query near-duplicate flows:
 ```
-python code/run.py cicids-query --row-index 0 --label-scope same --top-k 10
-python code/run.py cicids-query --sample-id Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv#0 --label-scope all --top-k 10
+python code/run.py cicids-query --model-type bigru --row-index 0 --label-scope same --top-k 10
+python code/run.py cicids-query --model-type mlp --sample-id Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv#0 --label-scope all --top-k 10
+```
+
+5. Run paper-style evaluation:
+```
+python code/run.py cicids-eval --output-dir ./data/cic_ids2017_processed
 ```
 
 Artifacts:
 - Processed flow data is written to `data/cic_ids2017_processed/`
 - Model artifacts are written to `code/Models/`
 - LSH hash tables are written to `code/Hash-Tables/`
+- Evaluation results are written to `results/`
 
 ## Conda (recommended if you don't use Docker)
 On macOS Apple Silicon (arm64), use the native `tensorflow-macos` build via `environment.yml`.
@@ -128,8 +141,10 @@ If you prefer not to activate the shell environment, the same commands can be ru
 ```
 /opt/miniconda3/bin/conda run -n deeplsh python code/run.py list
 /opt/miniconda3/bin/conda run -n deeplsh python code/run.py cicids-prepare --data-repo ./MachineLearningCVE --max-samples 300 --max-pairs 200
-/opt/miniconda3/bin/conda run -n deeplsh python code/run.py cicids-train --data-repo ./MachineLearningCVE --max-samples 300 --max-pairs 200 --epochs 1
-/opt/miniconda3/bin/conda run -n deeplsh python code/run.py cicids-query --row-index 0 --top-k 5
+/opt/miniconda3/bin/conda run -n deeplsh python code/run.py cicids-train-mlp --data-repo ./MachineLearningCVE --max-samples 300 --max-pairs 200 --epochs 1
+/opt/miniconda3/bin/conda run -n deeplsh python code/run.py cicids-train-bigru --data-repo ./MachineLearningCVE --max-samples 300 --max-pairs 200 --epochs 1
+/opt/miniconda3/bin/conda run -n deeplsh python code/run.py cicids-eval --output-dir ./data/cic_ids2017_processed
+/opt/miniconda3/bin/conda run -n deeplsh python code/run.py cicids-query --model-type bigru --row-index 0 --top-k 5
 ```
 
 ## Docker (recommended on macOS Apple Silicon)

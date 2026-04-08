@@ -1,10 +1,8 @@
 import argparse
 import json
 import os
-import pickle
 import sys
 
-import numpy as np
 import pandas as pd
 
 
@@ -33,8 +31,13 @@ def cmd_list(args) -> int:
     print("\navailable_commands:")
     print("lite   - query a single pair similarity value from similarity-measures-pairs.csv")
     print("deeplsh - train DeepLSH for a selected measure and build LSH hash tables")
-    print("cicids-prepare - prepare CIC-IDS-2017 CSV flow data and training pairs")
+    print("cicids-prepare - prepare CIC-IDS-2017 flow and sequence data")
+    print("cicids-prepare-flow - alias of cicids-prepare for MLP baseline")
+    print("cicids-prepare-seq - alias of cicids-prepare for Bi-GRU main model")
     print("cicids-train - train DeepLSH on CIC-IDS-2017 numeric flow features")
+    print("cicids-train-mlp - alias of cicids-train for the baseline model")
+    print("cicids-train-bigru - train Bi-GRU + DeepLSH on tokenized CIC-IDS logs")
+    print("cicids-eval - evaluate md5/simhash/mlp/bigru metrics and write results")
     print("cicids-query - query near-duplicate CIC-IDS flows from trained artifacts")
     print("cicids-list-labels - inspect CIC-IDS label distribution")
     return 0
@@ -130,8 +133,10 @@ def cmd_cicids_prepare(args) -> int:
                 f"data_repo={data_repo}",
                 f"output_dir={output_dir}",
                 f"flows={paths['flows']}",
+                f"flows_tokens={paths['flows_tokens']}",
                 f"pairs={paths['pairs']}",
                 f"metadata={paths['metadata']}",
+                f"vocab={paths['vocab']}",
             ]
         )
     )
@@ -182,6 +187,54 @@ def cmd_cicids_train(args) -> int:
     return 0
 
 
+def cmd_cicids_train_bigru(args) -> int:
+    _ensure_python_packages_on_path()
+    from cicids_pipeline import default_processed_data_dir, default_raw_data_dir
+    from train_cicids_bigru_deeplsh import main as train_main
+
+    data_repo = args.data_repo or default_raw_data_dir()
+    output_dir = args.output_dir or default_processed_data_dir()
+
+    argv = [
+        "--data-repo",
+        data_repo,
+        "--output-dir",
+        output_dir,
+        "--max-samples",
+        str(args.max_samples),
+        "--max-pairs",
+        str(args.max_pairs),
+        "--epochs",
+        str(args.epochs),
+        "--batch-size",
+        str(args.batch_size),
+        "--m",
+        str(args.m),
+        "--b",
+        str(args.b),
+        "--seed",
+        str(args.seed),
+        "--lsh-param-index",
+        str(args.lsh_param_index),
+        "--embed-dim",
+        str(args.embed_dim),
+        "--gru-units",
+        str(args.gru_units),
+        "--dense-dim",
+        str(args.dense_dim),
+    ]
+    if args.force_prepare:
+        argv.append("--force-prepare")
+
+    old_argv = sys.argv
+    try:
+        sys.argv = [old_argv[0], *argv]
+        train_main()
+    finally:
+        sys.argv = old_argv
+    return 0
+
+
 def cmd_cicids_list_labels(args) -> int:
     _ensure_python_packages_on_path()
     from cicids_pipeline import default_processed_data_dir, default_raw_data_dir, load_prepared_flows, load_cicids_raw_flows
@@ -204,122 +257,58 @@ def cmd_cicids_list_labels(args) -> int:
     return 0
 
 
-def _cosine_01(vector_a: np.ndarray, vector_b: np.ndarray) -> float:
-    denom = float(np.linalg.norm(vector_a) * np.linalg.norm(vector_b))
-    if denom == 0.0:
-        return 0.0
-    cosine = float(np.dot(vector_a, vector_b) / denom)
-    cosine = max(-1.0, min(1.0, cosine))
-    return (cosine + 1.0) / 2.0
-
-
-def _candidate_hit_counts(query_hamming, hash_tables, L, K, b):
-    n_bits = K * b
-    hit_counts = {}
-    for bucket_index in range(L):
-        key = query_hamming[bucket_index * n_bits : (bucket_index + 1) * n_bits].tobytes()
-        entry = hash_tables.get(f"entry_{bucket_index}", {})
-        if key not in entry:
-            continue
-        for candidate_index in entry[key]:
-            candidate_index = int(candidate_index)
-            hit_counts[candidate_index] = hit_counts.get(candidate_index, 0) + 1
-    return hit_counts
-
-
 def cmd_cicids_query(args) -> int:
     _ensure_python_packages_on_path()
-    from tensorflow.keras.models import load_model
+    from cicids_runtime import load_runtime_bundle, query_top_k
 
-    root = _project_root()
-    models_dir = os.path.join(root, "code", "Models")
-    hash_tables_dir = os.path.join(root, "code", "Hash-Tables")
-
-    model_path = os.path.join(models_dir, "model-deep-lsh-cicids.model")
-    corpus_path = os.path.join(models_dir, "cicids_flows.csv")
-    embeddings_path = os.path.join(models_dir, "cicids_embeddings.npy")
-    preprocessor_path = os.path.join(models_dir, "cicids_preprocessor.pkl")
-    train_meta_path = os.path.join(models_dir, "cicids_train_metadata.json")
-    hash_tables_path = os.path.join(hash_tables_dir, "hash_tables_deeplsh_cicids.pkl")
-
-    for required in [model_path, corpus_path, embeddings_path, preprocessor_path, train_meta_path, hash_tables_path]:
-        if not os.path.exists(required):
-            raise FileNotFoundError(f"Required CIC-IDS artifact not found: {required}")
-
-    flows_df = pd.read_csv(corpus_path)
-    embeddings = np.load(embeddings_path)
-    with open(preprocessor_path, "rb") as f:
-        preprocessor = pickle.load(f)
-    with open(train_meta_path, "r", encoding="utf-8") as f:
-        train_meta = json.load(f)
-    with open(hash_tables_path, "rb") as f:
-        hash_tables = pickle.load(f)
-
-    feature_columns = preprocessor["feature_columns"]
-    model = load_model(model_path)
-    lsh = train_meta["lsh"]
-    L = int(lsh["L"])
-    K = int(lsh["K"])
-    b = int(lsh["b"])
+    bundle = load_runtime_bundle(args.model_type)
+    corpus_df = bundle["corpus_df"]
 
     if args.sample_id is not None:
-        matches = flows_df.index[flows_df["sample_id"] == args.sample_id].tolist()
+        matches = corpus_df.index[corpus_df["sample_id"] == args.sample_id].tolist()
         if not matches:
             raise ValueError(f"Unknown sample_id: {args.sample_id}")
         query_index = int(matches[0])
     elif args.row_index is not None:
         query_index = int(args.row_index)
-        if query_index < 0 or query_index >= flows_df.shape[0]:
+        if query_index < 0 or query_index >= corpus_df.shape[0]:
             raise ValueError(f"--row-index out of range: {query_index}")
     else:
         raise ValueError("One of --sample-id or --row-index is required.")
 
-    query_vector = flows_df[feature_columns].iloc[[query_index]].to_numpy(dtype=np.float32)
-    query_embedding = model.predict(query_vector, verbose=0)[0]
-    query_hamming = np.where(query_embedding > 0, 1, -1).astype(np.int8)
-    hit_counts = _candidate_hit_counts(query_hamming, hash_tables, L, K, b)
-
-    label_scope = args.label_scope
-    query_label = str(flows_df.iloc[query_index]["Label"])
-    candidate_indices = [idx for idx in hit_counts.keys() if idx != query_index]
-    if label_scope == "same":
-        candidate_indices = [idx for idx in candidate_indices if str(flows_df.iloc[idx]["Label"]) == query_label]
-
-    if not candidate_indices:
-        candidate_indices = [idx for idx in range(flows_df.shape[0]) if idx != query_index]
-        if label_scope == "same":
-            candidate_indices = [idx for idx in candidate_indices if str(flows_df.iloc[idx]["Label"]) == query_label]
-
-    if not candidate_indices:
-        raise ValueError("No candidate flows available for the requested query scope.")
-
-    records = []
-    for candidate_index in candidate_indices:
-        candidate_embedding = embeddings[candidate_index]
-        records.append(
-            {
-                "query_sample_id": flows_df.iloc[query_index]["sample_id"],
-                "candidate_sample_id": flows_df.iloc[candidate_index]["sample_id"],
-                "query_label": query_label,
-                "candidate_label": str(flows_df.iloc[candidate_index]["Label"]),
-                "hash_bucket_hits": int(hit_counts.get(candidate_index, 0)),
-                "embedding_similarity": _cosine_01(query_embedding, candidate_embedding),
-                "is_same_label": int(str(flows_df.iloc[candidate_index]["Label"]) == query_label),
-                "source_file": str(flows_df.iloc[candidate_index]["source_file"]),
-            }
-        )
-
-    results = pd.DataFrame.from_records(records)
-    results = results.sort_values(
-        by=["hash_bucket_hits", "embedding_similarity", "candidate_sample_id"],
-        ascending=[False, False, True],
-    ).head(args.top_k)
+    results = query_top_k(bundle, query_index=query_index, top_k=args.top_k, label_scope=args.label_scope)
 
     if args.output_csv:
         results.to_csv(args.output_csv, index=False)
-        print(f"mode=cicids-query output_csv={args.output_csv} rows={results.shape[0]}")
+        print(f"mode=cicids-query model_type={args.model_type} output_csv={args.output_csv} rows={results.shape[0]}")
     else:
         print(results.to_string(index=False))
+    return 0
+
+
+def cmd_cicids_eval(args) -> int:
+    _ensure_python_packages_on_path()
+    from cicids_pipeline import default_processed_data_dir
+    from evaluate_cicids_models import main as eval_main
+
+    output_dir = args.output_dir or default_processed_data_dir()
+    argv = [
+        "--output-dir",
+        output_dir,
+        "--top-k",
+        str(args.top_k),
+        "--sample-limit",
+        str(args.sample_limit),
+    ]
+    if args.results_dir:
+        argv.extend(["--results-dir", args.results_dir])
+
+    old_argv = sys.argv
+    try:
+        sys.argv = [old_argv[0], *argv]
+        eval_main()
+    finally:
+        sys.argv = old_argv
     return 0
 
 
@@ -352,7 +341,7 @@ def main() -> int:
     p_deep.add_argument("--lsh-param-index", type=int, default=2)
     p_deep.set_defaults(func=cmd_deeplsh)
 
-    p_prepare = sub.add_parser("cicids-prepare", help="Prepare CIC-IDS-2017 CSV data and sampled pairs")
+    p_prepare = sub.add_parser("cicids-prepare", help="Prepare CIC-IDS-2017 flow and sequence data")
     p_prepare.add_argument("--data-repo", default=None)
     p_prepare.add_argument("--output-dir", default=None)
     p_prepare.add_argument("--max-samples", type=int, default=12000)
@@ -360,7 +349,23 @@ def main() -> int:
     p_prepare.add_argument("--seed", type=int, default=42)
     p_prepare.set_defaults(func=cmd_cicids_prepare)
 
-    p_train = sub.add_parser("cicids-train", help="Train DeepLSH on CIC-IDS-2017 flows")
+    p_prepare_flow = sub.add_parser("cicids-prepare-flow", help="Alias of cicids-prepare for the flow baseline")
+    p_prepare_flow.add_argument("--data-repo", default=None)
+    p_prepare_flow.add_argument("--output-dir", default=None)
+    p_prepare_flow.add_argument("--max-samples", type=int, default=12000)
+    p_prepare_flow.add_argument("--max-pairs", type=int, default=20000)
+    p_prepare_flow.add_argument("--seed", type=int, default=42)
+    p_prepare_flow.set_defaults(func=cmd_cicids_prepare)
+
+    p_prepare_seq = sub.add_parser("cicids-prepare-seq", help="Alias of cicids-prepare for Bi-GRU sequence data")
+    p_prepare_seq.add_argument("--data-repo", default=None)
+    p_prepare_seq.add_argument("--output-dir", default=None)
+    p_prepare_seq.add_argument("--max-samples", type=int, default=12000)
+    p_prepare_seq.add_argument("--max-pairs", type=int, default=20000)
+    p_prepare_seq.add_argument("--seed", type=int, default=42)
+    p_prepare_seq.set_defaults(func=cmd_cicids_prepare)
+
+    p_train = sub.add_parser("cicids-train", help="Train the MLP DeepLSH baseline on CIC-IDS-2017 flows")
     p_train.add_argument("--data-repo", default=None)
     p_train.add_argument("--output-dir", default=None)
     p_train.add_argument("--max-samples", type=int, default=12000)
@@ -375,7 +380,47 @@ def main() -> int:
     p_train.add_argument("--force-prepare", action="store_true")
     p_train.set_defaults(func=cmd_cicids_train)
 
+    p_train_mlp = sub.add_parser("cicids-train-mlp", help="Alias of cicids-train for the flow baseline")
+    p_train_mlp.add_argument("--data-repo", default=None)
+    p_train_mlp.add_argument("--output-dir", default=None)
+    p_train_mlp.add_argument("--max-samples", type=int, default=12000)
+    p_train_mlp.add_argument("--max-pairs", type=int, default=20000)
+    p_train_mlp.add_argument("--epochs", type=int, default=10)
+    p_train_mlp.add_argument("--batch-size", type=int, default=256)
+    p_train_mlp.add_argument("--m", type=int, default=64)
+    p_train_mlp.add_argument("--b", type=int, default=16)
+    p_train_mlp.add_argument("--seed", type=int, default=42)
+    p_train_mlp.add_argument("--lsh-param-index", type=int, default=2)
+    p_train_mlp.add_argument("--hidden-dims", type=int, nargs="+", default=[256, 128])
+    p_train_mlp.add_argument("--force-prepare", action="store_true")
+    p_train_mlp.set_defaults(func=cmd_cicids_train)
+
+    p_train_bigru = sub.add_parser("cicids-train-bigru", help="Train the Bi-GRU + DeepLSH paper model")
+    p_train_bigru.add_argument("--data-repo", default=None)
+    p_train_bigru.add_argument("--output-dir", default=None)
+    p_train_bigru.add_argument("--max-samples", type=int, default=12000)
+    p_train_bigru.add_argument("--max-pairs", type=int, default=20000)
+    p_train_bigru.add_argument("--epochs", type=int, default=10)
+    p_train_bigru.add_argument("--batch-size", type=int, default=128)
+    p_train_bigru.add_argument("--m", type=int, default=64)
+    p_train_bigru.add_argument("--b", type=int, default=16)
+    p_train_bigru.add_argument("--seed", type=int, default=42)
+    p_train_bigru.add_argument("--lsh-param-index", type=int, default=2)
+    p_train_bigru.add_argument("--embed-dim", type=int, default=64)
+    p_train_bigru.add_argument("--gru-units", type=int, default=64)
+    p_train_bigru.add_argument("--dense-dim", type=int, default=128)
+    p_train_bigru.add_argument("--force-prepare", action="store_true")
+    p_train_bigru.set_defaults(func=cmd_cicids_train_bigru)
+
+    p_eval = sub.add_parser("cicids-eval", help="Evaluate md5/simhash/mlp/bigru experiment metrics")
+    p_eval.add_argument("--output-dir", default=None)
+    p_eval.add_argument("--results-dir", default=None)
+    p_eval.add_argument("--top-k", type=int, default=10)
+    p_eval.add_argument("--sample-limit", type=int, default=50)
+    p_eval.set_defaults(func=cmd_cicids_eval)
+
     p_query = sub.add_parser("cicids-query", help="Query near-duplicate CIC-IDS flows")
+    p_query.add_argument("--model-type", choices=["mlp", "bigru"], default="bigru")
     p_query.add_argument("--sample-id", default=None)
     p_query.add_argument("--row-index", type=int, default=None)
     p_query.add_argument("--label-scope", choices=["same", "all"], default="same")

@@ -136,6 +136,8 @@ MachineLearningCVE/
 data/cic_ids2017_processed*/
 code/Models/
 code/Hash-Tables/
+results/
+results*/
 
 # Original local datasets from the upstream project
 data/stack-traces-*.csv
