@@ -27,7 +27,7 @@ server:
 
 app:
   cors:
-    allowed-origins: http://localhost:5173
+    allowed-origins: http://localhost:5173,http://127.0.0.1:5173
   python:
     workdir: /Users/zhao/domo_codex/deep-locality-sensitive-hashing-main
     script: /Users/zhao/domo_codex/deep-locality-sensitive-hashing-main/code/run.py

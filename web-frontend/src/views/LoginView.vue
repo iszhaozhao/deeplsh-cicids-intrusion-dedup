@@ -22,7 +22,7 @@
             <el-option label="运维人员" value="OPERATOR" />
           </el-select>
         </el-form-item>
-        <el-button type="primary" class="full-width" :loading="loading" @click="submit">登录系统</el-button>
+        <el-button type="primary" native-type="submit" class="full-width" :loading="loading">登录系统</el-button>
       </el-form>
 
       <div class="login-tip">
@@ -50,13 +50,22 @@ const form = reactive({
 })
 
 async function submit() {
+  if (loading.value) return
   loading.value = true
   try {
     await auth.login(form)
     ElMessage.success('登录成功')
-    router.push('/dashboard')
+    try {
+      await router.replace('/dashboard')
+    } catch {
+      window.location.assign('/dashboard')
+    }
   } catch (error) {
-    ElMessage.error(error?.response?.data?.message || '登录失败')
+    const message =
+      error?.response?.data?.message ||
+      (error?.message?.includes('Network Error') ? '登录失败：后端服务不可用，请确认 8080 服务已启动' : null) ||
+      '登录失败'
+    ElMessage.error(message)
   } finally {
     loading.value = false
   }

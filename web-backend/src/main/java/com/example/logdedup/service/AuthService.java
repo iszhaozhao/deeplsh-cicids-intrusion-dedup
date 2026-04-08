@@ -8,6 +8,7 @@ import com.example.logdedup.repository.SysUserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.util.StringUtils;
 
 @Service
 public class AuthService {
@@ -19,9 +20,18 @@ public class AuthService {
     }
 
     public LoginResponse login(LoginRequest request) {
-        SysUser user = sysUserRepository.findByUsernameAndRole(request.username(), request.role())
+        SysUser user = sysUserRepository.findByUsername(request.username())
             .filter(it -> it.getPassword().equals(request.password()))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户名、密码或角色错误"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户名或密码错误"));
+
+        if (StringUtils.hasText(request.role())) {
+            String requestedRole = request.role().trim().toUpperCase();
+            String actualRole = user.getRole() == null ? "" : user.getRole().trim().toUpperCase();
+            if (!requestedRole.equals(actualRole)) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "角色选择错误，请检查管理员/运维人员选项");
+            }
+        }
+
         return new LoginResponse(buildToken(user), user.getUsername(), user.getRealName(), user.getRole());
     }
 
