@@ -147,6 +147,50 @@ If you prefer not to activate the shell environment, the same commands can be ru
 /opt/miniconda3/bin/conda run -n deeplsh python code/run.py cicids-query --model-type bigru --row-index 0 --top-k 5
 ```
 
+## Environment layout
+This project currently uses three separate runtime environments. Only the model pipeline uses a dedicated Python virtual environment.
+
+1. Python model environment
+- Purpose: CIC-IDS-2017 preprocessing, training, evaluation, and near-duplicate query.
+- Type: `conda` virtual environment.
+- Name: `deeplsh`.
+- Definition: `environment.yml`.
+- Recommended usage:
+```
+conda run -n deeplsh python code/run.py cicids-prepare --data-repo ./MachineLearningCVE
+conda run -n deeplsh python code/run.py cicids-train-bigru --data-repo ./MachineLearningCVE
+```
+
+2. Web frontend environment
+- Purpose: Vue-based visualization and demo UI.
+- Type: project-local Node.js environment.
+- Definition: `web-frontend/package.json`.
+- Typical commands:
+```
+cd web-frontend
+npm install
+npm run dev
+```
+
+3. Web backend environment
+- Purpose: Spring Boot API layer, task orchestration, and Python CLI integration.
+- Type: local Java/Maven environment.
+- Definition: `web-backend/pom.xml`.
+- Required runtime: `JDK 17`.
+- Typical commands:
+```
+cd web-backend
+./mvnw spring-boot:run
+```
+
+Notes and caveats:
+- Do not run the model code from the conda `base` environment. Use `deeplsh`.
+- Prefer `environment.yml` over `code/requirements.txt`. The latter is mainly a legacy dependency list from the original project.
+- The Python stack is version-sensitive. This repo is currently aligned to `Python 3.9` and `tensorflow-macos==2.5.0`.
+- The backend configuration in `web-backend/src/main/resources/application.yml` uses absolute local paths for the Python workdir, script, model artifact, and flow CSV. Update those paths if you move the repo or switch machines.
+- The frontend and backend are not managed by conda. Installing the Python environment does not install Node.js or Java dependencies.
+- The backend uses a local H2 file database (`jdbc:h2:file:./data/logdedup`), so database files are created relative to the backend working directory.
+
 ## Docker (recommended on macOS Apple Silicon)
 This repo pins `tensorflow==2.5.0`, which is easiest to run in a Linux container on Apple Silicon.
 
