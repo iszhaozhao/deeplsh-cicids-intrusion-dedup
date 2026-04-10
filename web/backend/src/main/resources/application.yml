@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: log-dedup-web-backend
+  datasource:
+    url: jdbc:h2:file:./data/logdedup;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+
+server:
+  port: 8080
+
+app:
+  cors:
+    allowed-origins: http://localhost:5173,http://127.0.0.1:5173
+  python:
+    command: /opt/miniconda3/bin/conda run -n deeplsh python
+    workdir: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}
+    script: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}/code/run.py
+    model-artifact: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}/artifacts/cicids/models/model-deep-lsh-cicids.model
+    mlp-model-artifact: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}/artifacts/cicids/models/model-deep-lsh-cicids.model
+    bigru-model-artifact: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}/artifacts/cicids/models/model-deep-lsh-cicids-bigru.model
+    flows-csv: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}/artifacts/cicids/models/cicids_flows.csv
+  experiments:
+    results-dir: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}/artifacts/cicids/results/full
