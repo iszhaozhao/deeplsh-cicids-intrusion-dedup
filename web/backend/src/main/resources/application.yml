@@ -29,7 +29,7 @@ app:
   cors:
     allowed-origins: http://localhost:5173,http://127.0.0.1:5173
   python:
-    command: /opt/miniconda3/bin/conda run -n deeplsh python
+    command: ${DEEPLSH_PYTHON_COMMAND:"conda run -n deeplsh python"}
     workdir: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}
     script: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}/code/run.py
     model-artifact: ${DEEPLSH_REPO_ROOT:${user.dir}/../..}/artifacts/cicids/models/model-deep-lsh-cicids.model
