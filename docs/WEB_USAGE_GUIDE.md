@@ -192,19 +192,21 @@ H2 控制台是开发期数据库管理页面，用于：
 - 已完成任务数量
 - 最近一次运行消息
 
-## 5.5 训练演示（论文复现 + 本地训练）
+## 5.5 训练演示
 
-“训练演示”页面用于用图形化方式触发本地训练流程，并在页面中查看训练日志（tail）。
+“训练演示”页面用于用图形化方式触发 `CIC-IDS-2017` 本地训练流程，并在页面中查看训练日志（tail）。
 
-当前支持两类训练：
+当前支持的训练链路为：
 
-- 论文复现（DeepLSH / Stack Traces）：选择 `Measure`、`n`、`epochs` 等参数，点击“创建并启动”
-- CIC-IDS-2017 本地训练：按顺序点击 `Prepare -> Train MLP -> Train Bi-GRU -> Eval`
+- `Prepare`
+- `Train MLP`
+- `Train Bi-GRU`
+- `Eval`
 
 提示：
 
 - 页面会自动轮询 `RUNNING` 的训练任务状态与日志
-- 训练产物会落在项目目录（例如 `artifacts/stacktraces/`、`artifacts/cicids/`）
+- 训练产物会落在项目目录（例如 `artifacts/cicids/`）
 
 ## 5.6 结果展示
 

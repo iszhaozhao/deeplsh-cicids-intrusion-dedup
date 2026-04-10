@@ -1,0 +1,5 @@
+web/frontend/package-lock.json linguist-generated=true
+docs/images/** linguist-generated=true
+*.pb linguist-generated=true
+*.npy linguist-generated=true
+*.pkl linguist-generated=true

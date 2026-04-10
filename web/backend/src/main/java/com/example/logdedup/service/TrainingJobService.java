@@ -177,7 +177,6 @@ public class TrainingJobService {
             case "cicids-train-mlp" -> buildCicidsTrainMlpArgs(command, params);
             case "cicids-train-bigru" -> buildCicidsTrainBigruArgs(command, params);
             case "cicids-eval" -> buildCicidsEvalArgs(command, params);
-            case "deeplsh-train" -> buildDeeplshArgs(command, params);
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "未知 jobType: " + jobType);
         }
         return command;
@@ -279,35 +278,6 @@ public class TrainingJobService {
         command.add(String.valueOf(topK));
         command.add("--sample-limit");
         command.add(String.valueOf(sampleLimit));
-    }
-
-    private void buildDeeplshArgs(List<String> command, JsonNode params) {
-        command.add("deeplsh");
-        String measure = readString(params, "measure").orElse("TraceSim");
-        int n = readInt(params, "n").orElse(1000);
-        int epochs = readInt(params, "epochs").orElse(20);
-        int batchSize = readInt(params, "batchSize").orElse(512);
-        int m = readInt(params, "m").orElse(64);
-        int b = readInt(params, "b").orElse(16);
-        int seed = readInt(params, "seed").orElse(42);
-        int lshParamIndex = readInt(params, "lshParamIndex").orElse(2);
-
-        command.add("--measure");
-        command.add(measure);
-        command.add("--n");
-        command.add(String.valueOf(n));
-        command.add("--epochs");
-        command.add(String.valueOf(epochs));
-        command.add("--batch-size");
-        command.add(String.valueOf(batchSize));
-        command.add("--m");
-        command.add(String.valueOf(m));
-        command.add("--b");
-        command.add(String.valueOf(b));
-        command.add("--seed");
-        command.add(String.valueOf(seed));
-        command.add("--lsh-param-index");
-        command.add(String.valueOf(lshParamIndex));
     }
 
     private Path allocateLogPath(Long jobId) {
@@ -415,7 +385,7 @@ public class TrainingJobService {
     }
 
     private void validateJobType(String jobType) {
-        List<String> supported = List.of("cicids-prepare", "cicids-train-mlp", "cicids-train-bigru", "cicids-eval", "deeplsh-train");
+        List<String> supported = List.of("cicids-prepare", "cicids-train-mlp", "cicids-train-bigru", "cicids-eval");
         if (!supported.contains(jobType)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported jobType: " + jobType);
         }

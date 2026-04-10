@@ -24,14 +24,6 @@ def artifacts_dir() -> Path:
     return repo_root() / "artifacts"
 
 
-def stacktraces_dataset_dir() -> Path:
-    return datasets_dir() / "stacktraces"
-
-
-def stacktraces_artifacts_dir() -> Path:
-    return artifacts_dir() / "stacktraces"
-
-
 def cicids_raw_dir() -> Path:
     return datasets_dir() / "cicids" / "raw"
 
@@ -43,4 +35,3 @@ def cicids_processed_dir(kind: str = "full") -> Path:
 
 def cicids_artifacts_dir() -> Path:
     return artifacts_dir() / "cicids"
-
