@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 
 public record TaskCreateRequest(
     @NotBlank String taskName,
+    @NotBlank String modelType,
     @NotNull @DecimalMin("0.10") @DecimalMax("1.00") BigDecimal similarityThreshold,
     @NotNull Integer timeWindow,
     @NotBlank String reservePolicy,

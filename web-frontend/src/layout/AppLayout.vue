@@ -19,10 +19,10 @@
       >
         <el-menu-item index="/dashboard">首页</el-menu-item>
         <el-menu-item index="/logs/import">日志导入</el-menu-item>
-        <el-menu-item index="/params">参数配置</el-menu-item>
+        <el-menu-item index="/params">检索任务配置</el-menu-item>
         <el-menu-item index="/tasks">任务执行</el-menu-item>
         <el-menu-item index="/results">结果展示</el-menu-item>
-        <el-menu-item index="/stats">统计分析</el-menu-item>
+        <el-menu-item index="/stats">实验对比分析</el-menu-item>
       </el-menu>
     </aside>
 
@@ -30,7 +30,7 @@
       <header class="app-header">
         <div>
           <div class="page-title">{{ pageTitle }}</div>
-          <div class="page-subtitle">网络入侵检测日志去重轻量 Web 原型</div>
+          <div class="page-subtitle">DeepLSH 近重复检索与告警聚合展示平台</div>
         </div>
         <div class="header-actions">
           <div class="user-badge">
@@ -58,12 +58,12 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const titleMap = {
-  '/dashboard': '系统首页',
+  '/dashboard': 'DeepLSH 系统首页',
   '/logs/import': '日志导入',
-  '/params': '参数配置',
-  '/tasks': '去重任务',
-  '/results': '结果展示',
-  '/stats': '统计分析'
+  '/params': '检索任务配置',
+  '/tasks': '任务执行',
+  '/results': '近重复结果展示',
+  '/stats': '实验对比分析'
 }
 
 const pageTitle = computed(() => titleMap[route.path] || '系统页面')

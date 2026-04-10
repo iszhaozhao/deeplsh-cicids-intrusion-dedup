@@ -45,6 +45,7 @@ public class TaskService {
     public TaskResponse createTask(TaskCreateRequest request) {
         DedupTask task = new DedupTask();
         task.setTaskName(request.taskName());
+        task.setModelType(normalizeModelType(request.modelType()));
         task.setSimilarityThreshold(request.similarityThreshold());
         task.setTimeWindow(request.timeWindow());
         task.setReservePolicy(request.reservePolicy());
@@ -68,8 +69,10 @@ public class TaskService {
         DedupTask task = dedupTaskRepository.findById(taskId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
 
+        task.setModelType(normalizeModelType(task.getModelType()));
+
         task.setStatus("RUNNING");
-        task.setRunMessage("Invoking Python query: " + pythonQueryService.describeMode());
+        task.setRunMessage("Invoking Python query: " + pythonQueryService.describeMode(task));
         dedupTaskRepository.save(task);
 
         LocalDateTime start = LocalDateTime.now();
@@ -84,7 +87,12 @@ public class TaskService {
             result.setTaskId(taskId);
             result.setLogId((long) (index + 1));
             result.setAttackType(record.candidateLabel());
+            result.setQuerySampleId(record.querySampleId());
+            result.setQueryLabel(record.queryLabel());
+            result.setCandidateLabel(record.candidateLabel());
             result.setCandidateSampleId(record.candidateSampleId());
+            result.setHashBucketHits(record.hashBucketHits());
+            result.setIsSameLabel(record.isSameLabel());
             result.setClusterId("cluster-" + taskId);
             result.setHashCode(fakeHashCode(record, task.getHashBits() == null ? 32 : task.getHashBits()));
             result.setSimilarityScore(record.embeddingSimilarity().setScale(4, RoundingMode.HALF_UP));
@@ -107,7 +115,7 @@ public class TaskService {
             ? BigDecimal.ZERO
             : BigDecimal.valueOf((double) elapsedMs / total).setScale(2, RoundingMode.HALF_UP));
         task.setStatus("SUCCESS");
-        task.setRunMessage("Task finished with " + pythonQueryService.describeMode());
+        task.setRunMessage("Task finished with " + pythonQueryService.describeMode(task) + " [" + normalizeModelType(task.getModelType()) + "]");
         return toResponse(dedupTaskRepository.save(task));
     }
 
@@ -121,6 +129,7 @@ public class TaskService {
         return new TaskResponse(
             task.getId(),
             task.getTaskName(),
+            normalizeModelType(task.getModelType()),
             task.getSimilarityThreshold(),
             task.getTimeWindow(),
             task.getReservePolicy(),
@@ -134,6 +143,7 @@ public class TaskService {
             task.getRowIndex(),
             task.getLabelScope(),
             task.getTopK(),
+            queryMode(task),
             task.getRunMessage(),
             task.getCreateTime()
         );
@@ -150,5 +160,16 @@ public class TaskService {
             builder.append(((ch + i) % 2 == 0) ? '1' : '0');
         }
         return builder.toString();
+    }
+
+    private String normalizeModelType(String modelType) {
+        if (modelType == null || modelType.isBlank()) {
+            return "bigru";
+        }
+        return modelType.trim().toLowerCase();
+    }
+
+    private String queryMode(DedupTask task) {
+        return task.getSampleId() != null && !task.getSampleId().isBlank() ? "sample_id" : "row_index";
     }
 }

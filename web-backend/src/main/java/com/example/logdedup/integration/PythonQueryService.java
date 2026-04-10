@@ -31,7 +31,7 @@ public class PythonQueryService {
     }
 
     public List<PythonQueryRecord> queryCandidates(DedupTask task) {
-        if (hasRealQueryArtifacts()) {
+        if (hasRealQueryArtifacts(task)) {
             try {
                 return runRealQuery(task);
             } catch (Exception ex) {
@@ -41,12 +41,12 @@ public class PythonQueryService {
         return buildFallbackQuery(task, "missing model artifact, using fallback");
     }
 
-    public String describeMode() {
-        return hasRealQueryArtifacts() ? "REAL_QUERY" : "FALLBACK_QUERY";
+    public String describeMode(DedupTask task) {
+        return hasRealQueryArtifacts(task) ? "REAL_QUERY" : "FALLBACK_QUERY";
     }
 
-    private boolean hasRealQueryArtifacts() {
-        Path modelArtifact = Path.of(appProperties.getPython().getModelArtifact());
+    private boolean hasRealQueryArtifacts(DedupTask task) {
+        Path modelArtifact = Path.of(resolveModelArtifact(task));
         return Files.exists(modelArtifact);
     }
 
@@ -56,6 +56,8 @@ public class PythonQueryService {
         command.add(resolvePythonCommand());
         command.add(appProperties.getPython().getScript());
         command.add("cicids-query");
+        command.add("--model-type");
+        command.add(normalizeModelType(task));
         if (task.getSampleId() != null && !task.getSampleId().isBlank()) {
             command.add("--sample-id");
             command.add(task.getSampleId());
@@ -187,5 +189,23 @@ public class PythonQueryService {
 
     private String resolvePythonCommand() {
         return "python3";
+    }
+
+    private String normalizeModelType(DedupTask task) {
+        if (task.getModelType() == null || task.getModelType().isBlank()) {
+            return "bigru";
+        }
+        return task.getModelType().trim().toLowerCase();
+    }
+
+    private String resolveModelArtifact(DedupTask task) {
+        String modelType = normalizeModelType(task);
+        if ("mlp".equals(modelType) && appProperties.getPython().getMlpModelArtifact() != null) {
+            return appProperties.getPython().getMlpModelArtifact();
+        }
+        if ("bigru".equals(modelType) && appProperties.getPython().getBigruModelArtifact() != null) {
+            return appProperties.getPython().getBigruModelArtifact();
+        }
+        return appProperties.getPython().getModelArtifact();
     }
 }

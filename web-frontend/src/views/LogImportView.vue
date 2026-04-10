@@ -1,7 +1,7 @@
 <template>
   <div class="page-stack">
     <el-card shadow="never">
-      <template #header>导入日志文件</template>
+      <template #header>为检索任务准备 CSV 样本</template>
       <el-form :model="form" label-width="110px">
         <el-form-item label="关联任务">
           <el-select v-model="form.taskId" class="wide-field" placeholder="请选择任务">
@@ -21,7 +21,7 @@
     </el-card>
 
     <el-card shadow="never" v-if="uploadResult">
-      <template #header>导入反馈</template>
+      <template #header>样本导入反馈</template>
       <div class="upload-summary">
         <div>文件名：{{ uploadResult.fileName }}</div>
         <div>任务编号：{{ uploadResult.taskId }}</div>

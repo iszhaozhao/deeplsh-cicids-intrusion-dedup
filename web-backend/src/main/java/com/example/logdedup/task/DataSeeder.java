@@ -45,6 +45,7 @@ public class DataSeeder implements CommandLineRunner {
             task.setTimeWindow(60);
             task.setReservePolicy("EARLIEST");
             task.setHashBits(32);
+            task.setModelType("bigru");
             task.setTotalLogs(10);
             task.setRedundantLogs(6);
             task.setCompressionRate(new BigDecimal("60.00"));
@@ -63,9 +64,14 @@ public class DataSeeder implements CommandLineRunner {
                 result.setTaskId(task.getId());
                 result.setLogId((long) (i + 1));
                 result.setAttackType(i < 3 ? "DDoS" : "PortScan");
+                result.setQuerySampleId("Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv#0");
+                result.setQueryLabel("DDoS");
+                result.setCandidateLabel(i < 3 ? "DDoS" : "PortScan");
                 result.setHashCode(i % 2 == 0 ? "10101010101010101010101010101010" : "11001100110011001100110011001100");
                 result.setSimilarityScore(new BigDecimal("0.9").subtract(new BigDecimal("0.03").multiply(BigDecimal.valueOf(i))));
+                result.setHashBucketHits(Math.max(1, 5 - i));
                 result.setClusterId("cluster-" + task.getId());
+                result.setIsSameLabel(i < 3 ? 1 : 0);
                 result.setIsRedundant(i < 3 ? 1 : 0);
                 result.setReserveLogId(1L);
                 result.setCandidateSampleId("seed-sample-" + i);

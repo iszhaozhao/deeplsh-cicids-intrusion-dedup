@@ -32,6 +32,9 @@ public class DedupTask {
     @Column(name = "hash_bits")
     private Integer hashBits;
 
+    @Column(name = "model_type", length = 16)
+    private String modelType;
+
     @Column(name = "total_logs")
     private Integer totalLogs;
 
@@ -111,6 +114,14 @@ public class DedupTask {
 
     public void setHashBits(Integer hashBits) {
         this.hashBits = hashBits;
+    }
+
+    public String getModelType() {
+        return modelType;
+    }
+
+    public void setModelType(String modelType) {
+        this.modelType = modelType;
     }
 
     public Integer getTotalLogs() {

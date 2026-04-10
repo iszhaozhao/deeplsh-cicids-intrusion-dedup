@@ -19,10 +19,16 @@ public class StatsService {
 
     private final DedupTaskRepository taskRepository;
     private final DedupResultRepository resultRepository;
+    private final ExperimentService experimentService;
 
-    public StatsService(DedupTaskRepository taskRepository, DedupResultRepository resultRepository) {
+    public StatsService(
+        DedupTaskRepository taskRepository,
+        DedupResultRepository resultRepository,
+        ExperimentService experimentService
+    ) {
         this.taskRepository = taskRepository;
         this.resultRepository = resultRepository;
+        this.experimentService = experimentService;
     }
 
     public StatsOverviewResponse overview() {
@@ -46,6 +52,10 @@ public class StatsService {
                 Map<String, Object> map = new LinkedHashMap<>();
                 map.put("id", task.getId());
                 map.put("taskName", task.getTaskName());
+                map.put("modelType", normalizeModelType(task.getModelType()));
+                map.put("queryMode", task.getSampleId() != null && !task.getSampleId().isBlank() ? "sample_id" : "row_index");
+                map.put("labelScope", task.getLabelScope());
+                map.put("topK", task.getTopK());
                 map.put("status", task.getStatus());
                 map.put("compressionRate", task.getCompressionRate());
                 map.put("avgLatencyMs", task.getAvgLatencyMs());
@@ -64,12 +74,26 @@ public class StatsService {
             attackTypes.add(item);
         });
 
+        DedupTask latestTask = tasks.stream()
+            .sorted((a, b) -> b.getCreateTime().compareTo(a.getCreateTime()))
+            .findFirst()
+            .orElse(null);
+
+        var summary = experimentService.summary();
+
         return new StatsOverviewResponse(
             tasks.size(),
             totalLogs,
             results.size(),
+            tasks.stream().filter(task -> task.getStatus() != null && !"FAILED".equalsIgnoreCase(task.getStatus())).count(),
             avgCompressionRate,
             avgLatency,
+            latestTask == null ? null : normalizeModelType(latestTask.getModelType()),
+            latestTask == null ? null : latestTask.getLabelScope(),
+            latestTask == null ? null : latestTask.getTopK(),
+            summary.bestModelName(),
+            summary.bestModelDisplayName(),
+            summary.bestModelF1(),
             recentTasks,
             attackTypes
         );
@@ -81,5 +105,12 @@ public class StatsService {
         }
         BigDecimal total = values.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
         return total.divide(BigDecimal.valueOf(values.size()), 2, RoundingMode.HALF_UP);
+    }
+
+    private String normalizeModelType(String modelType) {
+        if (modelType == null || modelType.isBlank()) {
+            return "bigru";
+        }
+        return modelType.trim().toLowerCase();
     }
 }

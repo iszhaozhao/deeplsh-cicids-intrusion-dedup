@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 public record TaskResponse(
     Long id,
     String taskName,
+    String modelType,
     BigDecimal similarityThreshold,
     Integer timeWindow,
     String reservePolicy,
@@ -19,6 +20,7 @@ public record TaskResponse(
     Integer rowIndex,
     String labelScope,
     Integer topK,
+    String queryMode,
     String runMessage,
     LocalDateTime createTime
 ) {
