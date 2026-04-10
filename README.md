@@ -26,57 +26,51 @@ Our contribution is three-fold.
 ![contrib](docs/images/stacktraces/Images-paper/DeepLSH%20model.png)
 
 ## How to use this code?
-我推荐使用的是python3.9
-1. Clone this repository 
-2. Install the required python packages: ```pip install -r ./code/requirements.txt ```
-3. Run without Jupyter (recommended for local CLI usage):
-    
-    3.1. Create and activate a virtual environment (Windows PowerShell example):
-    ```
-    py -3.9 -m venv .venv
-    .\.venv\Scripts\Activate.ps1
-    pip install -r .\code\requirements.txt
-    ```
+本项目推荐使用 `Python 3.9`，并使用 conda 环境运行（macOS Apple Silicon 适配 `tensorflow-macos==2.5.0`）。
 
-    3.2. List available similarity measures (from `data/similarity-measures-pairs.csv`):
-    ```
-    python .\code\run.py list
-    ```
+1. Clone this repository
+2. Create the conda environment:
+   ```
+   conda env create -f environment.yml
+   conda activate deeplsh
+   ```
+3. List available similarity measures (from `datasets/stacktraces/similarity-measures-pairs.csv`):
+   ```
+   python code/run.py list
+   ```
 
-    3.3. Lightweight (lite) run (fast): query one similarity value from the precomputed pairs file.
-    This is the fastest way to "run the project" locally and choose a measure.
-    ```
-    python .\code\run.py lite --measure TraceSim --index-a 0 --index-b 10
-    python .\code\run.py lite --measure Jaccard --index-a 0 --index-b 10
-    python .\code\run.py lite --measure Brodie --index-a 0 --index-b 10
-    python .\code\run.py lite --measure DURFEX --index-a 0 --index-b 10
-    python .\code\run.py lite --measure TfIdf --index-a 0 --index-b 10
-    ```
-    Note: the provided `similarity-measures-pairs.csv` corresponds to 1000 stacks in this repo.
+4. Lightweight (lite) run (fast): query one similarity value from the precomputed pairs file.
+   This is the fastest way to "run the project" locally and choose a measure.
+   ```
+   python code/run.py lite --measure TraceSim --index-a 0 --index-b 10
+   python code/run.py lite --measure Jaccard --index-a 0 --index-b 10
+   python code/run.py lite --measure Brodie --index-a 0 --index-b 10
+   python code/run.py lite --measure DURFEX --index-a 0 --index-b 10
+   python code/run.py lite --measure TfIdf --index-a 0 --index-b 10
+   ```
+   Note: the provided `similarity-measures-pairs.csv` corresponds to 1000 stacks in this repo.
 
-    3.4. Full run (DeepLSH training + LSH hash tables): train DeepLSH for a selected measure and build hash tables.
-    ```
-    python .\code\run.py deeplsh --measure TraceSim
-    python .\code\run.py deeplsh --measure Jaccard
-    python .\code\run.py deeplsh --measure Cosine
-    python .\code\run.py deeplsh --measure TfIdf
-    python .\code\run.py deeplsh --measure Levensh
-    python .\code\run.py deeplsh --measure PDM
-    python .\code\run.py deeplsh --measure Brodie
-    python .\code\run.py deeplsh --measure DURFEX
-    python .\code\run.py deeplsh --measure Lerch
-    python .\code\run.py deeplsh --measure Moroo
-    ```
-    Outputs:
-    - Models are saved to `artifacts/stacktraces/models/` as `model-deep-lsh-<measure>.model`
-    - Hash tables are saved to `artifacts/stacktraces/hash_tables/` as `hash_tables_deeplsh_<measure>.pkl`
+5. Full run (DeepLSH training + LSH hash tables): train DeepLSH for a selected measure and build hash tables.
+   ```
+   python code/run.py deeplsh --measure TraceSim
+   python code/run.py deeplsh --measure Jaccard
+   python code/run.py deeplsh --measure Cosine
+   python code/run.py deeplsh --measure TfIdf
+   python code/run.py deeplsh --measure Levensh
+   python code/run.py deeplsh --measure PDM
+   python code/run.py deeplsh --measure Brodie
+   python code/run.py deeplsh --measure DURFEX
+   python code/run.py deeplsh --measure Lerch
+   python code/run.py deeplsh --measure Moroo
+   ```
+   Outputs:
+   - Models are saved to `artifacts/stacktraces/models/` as `model-deep-lsh-<measure>.model`
+   - Hash tables are saved to `artifacts/stacktraces/hash_tables/` as `hash_tables_deeplsh_<measure>.pkl`
 
-    3.5. Faster smoke test for DeepLSH (recommended first run):
-    ```
-    python .\code\run.py deeplsh --measure TraceSim --n 200 --epochs 1 --batch-size 128
-    ```
-
- 4. (Optional) Run the notebooks in `notebooks/stacktraces/` if you prefer the original experimental setup.
+6. Faster smoke test for DeepLSH (recommended first run):
+   ```
+   python code/run.py deeplsh --measure TraceSim --n 200 --epochs 1 --batch-size 128
+   ```
 
 ## CIC-IDS-2017 network flow deduplication
 This repo now supports two CIC-IDS-2017 experiment paths in `datasets/cicids/raw/`:
@@ -121,13 +115,19 @@ Artifacts:
 - LSH hash tables are written to `artifacts/cicids/hash_tables/`
 - Evaluation results are written to `artifacts/cicids/results/full/`
 
-## Conda (recommended if you don't use Docker)
+## Conda (recommended)
 On macOS Apple Silicon (arm64), use the native `tensorflow-macos` build via `environment.yml`.
 
 1. Create the environment:
 ```
 conda env create -f environment.yml
 conda activate deeplsh
+```
+
+If you want notebook / plotting tools, create the dev environment:
+```
+conda env create -f environment-dev.yml
+conda activate deeplsh-dev
 ```
 
 2. Smoke test:
@@ -185,23 +185,11 @@ cd web/backend
 
 Notes and caveats:
 - Do not run the model code from the conda `base` environment. Use `deeplsh`.
-- Prefer `environment.yml` over `code/requirements.txt`. The latter is mainly a legacy dependency list from the original project.
 - The Python stack is version-sensitive. This repo is currently aligned to `Python 3.9` and `tensorflow-macos==2.5.0`.
 - The backend configuration in `web/backend/src/main/resources/application.yml` defaults to `${DEEPLSH_REPO_ROOT}` (or `${user.dir}/../..`) so it works across machines.
 - The frontend and backend are not managed by conda. Installing the Python environment does not install Node.js or Java dependencies.
 - The backend uses a local H2 file database (`jdbc:h2:file:./data/logdedup`), so database files are created relative to the backend working directory.
 
-## Docker (recommended on macOS Apple Silicon)
-This repo pins `tensorflow==2.5.0`, which is easiest to run in a Linux container on Apple Silicon.
-
-1. Build (force `linux/amd64`):
-```
-docker buildx build --platform linux/amd64 -t deeplsh:py39 .
-```
-
-2. Run examples:
-```
-docker run --rm -it --platform linux/amd64 -v "$PWD":/app -w /app deeplsh:py39 python code/run.py list
-docker run --rm -it --platform linux/amd64 -v "$PWD":/app -w /app deeplsh:py39 python code/run.py lite --measure TraceSim --index-a 0 --index-b 10
-docker run --rm -it --platform linux/amd64 -v "$PWD":/app -w /app deeplsh:py39 python code/run.py deeplsh --measure TraceSim --n 200 --epochs 1 --batch-size 128
-```
+Packaging note:
+- For local CLI/Web usage, you do not need to `pip install` this repo. `code/run.py` adds `python/src` to `sys.path`.
+- If you do want an editable install: `pip install -e python --no-build-isolation` (useful in restricted/offline environments).

@@ -1,10 +1,9 @@
-name: deeplsh
+name: deeplsh-dev
 channels:
   - conda-forge
 dependencies:
   - python=3.9
   - pip=23.3.1
-  # Needed for `pip install -e python` (PEP 660) and general packaging hygiene.
   - setuptools>=64
   - numpy=1.19.5
   - pandas=1.2.4
@@ -14,10 +13,11 @@ dependencies:
   - grpcio=1.34.1
   - requests
   - chardet
+  # Dev / notebook tooling
+  - matplotlib=3.4.2
+  - seaborn=0.11.1
+  - jupyterlab
   - pip:
-      # Apple Silicon native TensorFlow.
-      # Note: Using upstream `tensorflow==2.5.0` on x86_64 requires AVX and will not run under Rosetta.
       - tensorflow-macos==2.5.0
-      # Used by `deeplsh.core.*`
       - pylev==1.4.0
       - fnvhash==0.2.1
