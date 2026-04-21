@@ -281,22 +281,107 @@ def _sample_negative_pairs(
     return sorted(pairs)
 
 
-def build_pairs_dataframe(flows_df: pd.DataFrame, feature_columns: Iterable[str], max_pairs: int, seed: int) -> pd.DataFrame:
+def _tokens_for_similarity(token_sequence: object) -> set:
+    return {
+        token
+        for token in str(token_sequence).split()
+        if not token.startswith("label=") and not token.startswith("source=")
+    }
+
+
+def _token_jaccard(token_sets: Optional[List[set]], index_a: int, index_b: int) -> float:
+    if token_sets is None:
+        return 0.0
+    union = token_sets[index_a] | token_sets[index_b]
+    if not union:
+        return 0.0
+    return float(len(token_sets[index_a] & token_sets[index_b]) / len(union))
+
+
+def _sample_hard_negative_pairs(
+    label_to_indices: Dict[str, np.ndarray],
+    token_sets: List[set],
+    target_count: int,
+    rng: np.random.Generator,
+    min_jaccard: float,
+    max_jaccard: float,
+) -> Tuple[List[Tuple[int, int]], Dict[Tuple[int, int], float]]:
+    labels = [label for label, indices in label_to_indices.items() if len(indices) >= 1]
+    if len(labels) < 2:
+        return [], {}
+
+    pairs = set()
+    scores: Dict[Tuple[int, int], float] = {}
+    attempts = 0
+    max_attempts = max(target_count * 500, 10000)
+    while len(pairs) < target_count and attempts < max_attempts:
+        label_a, label_b = rng.choice(labels, size=2, replace=False).tolist()
+        idx_a = int(rng.choice(label_to_indices[label_a]))
+        idx_b = int(rng.choice(label_to_indices[label_b]))
+        pair = tuple(sorted((idx_a, idx_b)))
+        if pair in pairs:
+            attempts += 1
+            continue
+        score = _token_jaccard(token_sets, pair[0], pair[1])
+        if min_jaccard <= score <= max_jaccard:
+            pairs.add(pair)
+            scores[pair] = score
+        attempts += 1
+    return sorted(pairs), scores
+
+
+def build_pairs_dataframe(
+    flows_df: pd.DataFrame,
+    feature_columns: Iterable[str],
+    max_pairs: int,
+    seed: int,
+    token_flows_df: Optional[pd.DataFrame] = None,
+    negative_strategy: str = "random",
+    hard_negative_min_jaccard: float = 0.3,
+    hard_negative_max_jaccard: float = 0.5,
+) -> pd.DataFrame:
     if max_pairs <= 0:
         raise ValueError("max_pairs must be > 0")
+    if negative_strategy not in {"random", "hard"}:
+        raise ValueError(f"Unknown negative_strategy: {negative_strategy}")
 
     feature_columns = list(feature_columns)
     vectors = flows_df[feature_columns].to_numpy(dtype=np.float32)
     label_to_indices = {label: group.index.to_numpy() for label, group in flows_df.groupby("Label")}
     rng = np.random.default_rng(seed)
+    token_sets = None
+    if token_flows_df is not None and "token_sequence" in token_flows_df.columns:
+        token_sets = [_tokens_for_similarity(sequence) for sequence in token_flows_df["token_sequence"].fillna("")]
 
     target_positive = max(1, max_pairs // 2)
     target_negative = max(1, max_pairs - target_positive)
     positive_pairs = _sample_positive_pairs(label_to_indices, target_positive, rng)
-    negative_pairs = _sample_negative_pairs(label_to_indices, target_negative, rng)
+    hard_negative_scores: Dict[Tuple[int, int], float] = {}
+    if negative_strategy == "hard" and token_sets is not None:
+        negative_pairs, hard_negative_scores = _sample_hard_negative_pairs(
+            label_to_indices,
+            token_sets,
+            target_negative,
+            rng,
+            min_jaccard=hard_negative_min_jaccard,
+            max_jaccard=hard_negative_max_jaccard,
+        )
+    else:
+        negative_pairs = []
+    if len(negative_pairs) < target_negative:
+        fallback_pairs = _sample_negative_pairs(label_to_indices, target_negative * 3, rng)
+        seen = set(negative_pairs)
+        for pair in fallback_pairs:
+            if pair in seen:
+                continue
+            negative_pairs.append(pair)
+            seen.add(pair)
+            if len(negative_pairs) >= target_negative:
+                break
 
     records = []
     for index_a, index_b in positive_pairs:
+        token_jaccard = _token_jaccard(token_sets, index_a, index_b)
         records.append(
             {
                 "flow_index_1": int(index_a),
@@ -306,11 +391,16 @@ def build_pairs_dataframe(flows_df: pd.DataFrame, feature_columns: Iterable[str]
                 "label_1": flows_df.iloc[index_a]["Label"],
                 "label_2": flows_df.iloc[index_b]["Label"],
                 "target_similarity": _cosine_01(vectors[index_a], vectors[index_b]),
+                "token_jaccard": token_jaccard,
+                "negative_strategy": "positive",
                 "is_duplicate": 1,
             }
         )
 
     for index_a, index_b in negative_pairs:
+        pair = tuple(sorted((int(index_a), int(index_b))))
+        token_jaccard = hard_negative_scores.get(pair, _token_jaccard(token_sets, int(index_a), int(index_b)))
+        strategy = "hard" if pair in hard_negative_scores else "random"
         records.append(
             {
                 "flow_index_1": int(index_a),
@@ -320,6 +410,8 @@ def build_pairs_dataframe(flows_df: pd.DataFrame, feature_columns: Iterable[str]
                 "label_1": flows_df.iloc[index_a]["Label"],
                 "label_2": flows_df.iloc[index_b]["Label"],
                 "target_similarity": 0.0,
+                "token_jaccard": token_jaccard,
+                "negative_strategy": strategy,
                 "is_duplicate": 0,
             }
         )
@@ -338,6 +430,9 @@ def prepare_cicids_dataset(
     max_samples: Optional[int] = None,
     max_pairs: int = 20000,
     seed: int = 42,
+    negative_strategy: str = "random",
+    hard_negative_min_jaccard: float = 0.3,
+    hard_negative_max_jaccard: float = 0.5,
 ) -> Dict[str, str]:
     data_dir = data_dir or default_raw_data_dir()
     output_dir = output_dir or default_processed_data_dir()
@@ -354,7 +449,16 @@ def prepare_cicids_dataset(
     flows_df["Label"] = raw_df["Label"].astype(str)
     flows_df[feature_columns] = scaled.astype(np.float32)
 
-    pairs_df = build_pairs_dataframe(flows_df, feature_columns=feature_columns, max_pairs=max_pairs, seed=seed)
+    pairs_df = build_pairs_dataframe(
+        flows_df,
+        feature_columns=feature_columns,
+        max_pairs=max_pairs,
+        seed=seed,
+        token_flows_df=tokens_df,
+        negative_strategy=negative_strategy,
+        hard_negative_min_jaccard=hard_negative_min_jaccard,
+        hard_negative_max_jaccard=hard_negative_max_jaccard,
+    )
 
     metadata = {
         "raw_data_dir": data_dir,
@@ -366,6 +470,9 @@ def prepare_cicids_dataset(
         "max_samples": max_samples,
         "max_pairs": int(max_pairs),
         "seed": int(seed),
+        "negative_strategy": negative_strategy,
+        "hard_negative_min_jaccard": float(hard_negative_min_jaccard),
+        "hard_negative_max_jaccard": float(hard_negative_max_jaccard),
     }
 
     preprocessor = {

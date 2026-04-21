@@ -18,6 +18,7 @@
         active-text-color="#ffffff"
       >
         <el-menu-item index="/dashboard">首页</el-menu-item>
+        <el-menu-item index="/showcase">成果展示</el-menu-item>
         <el-menu-item index="/logs/import">日志导入</el-menu-item>
         <el-menu-item index="/params">检索任务配置</el-menu-item>
         <el-menu-item index="/tasks">任务执行</el-menu-item>
@@ -60,6 +61,7 @@ const auth = useAuthStore()
 
 const titleMap = {
   '/dashboard': 'DeepLSH 系统首页',
+  '/showcase': '成果展示',
   '/logs/import': '日志导入',
   '/params': '检索任务配置',
   '/tasks': '任务执行',

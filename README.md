@@ -9,9 +9,9 @@
 - Python 训练与评估管线
 - Spring Boot 后端
 - Vue 3 前端原型
-- 毕设答辩与使用文档
 
 旧版 notebook 研究内容已从主版本移除，当前主版本仅保留网络入侵检测日志去重系统所需内容。
+本地个人说明文档和答辩材料不纳入版本库。
 
 ## 目录结构
 
@@ -21,7 +21,6 @@
 ├── python/src/deeplsh/      # Python 算法实现
 ├── web/backend/             # Spring Boot 后端
 ├── web/frontend/            # Vue 3 前端
-├── docs/                    # 使用说明、答辩材料
 ├── environment.yml          # Python 运行环境
 └── environment-dev.yml      # 开发/绘图补充环境
 ```
@@ -137,9 +136,6 @@ npm run dev
 - 哈希表：`artifacts/cicids/hash_tables/`
 - 评估结果：`artifacts/cicids/results/full/`
 
-## 文档入口
+## 开发说明
 
-- [docs/WEB_USAGE_GUIDE.md](/Users/zhao/domo_codex/deep-locality-sensitive-hashing-main/docs/WEB_USAGE_GUIDE.md)
-- [docs/答辩演示脚本.md](/Users/zhao/domo_codex/deep-locality-sensitive-hashing-main/docs/答辩演示脚本.md)
-- [docs/答辩PPT主线.md](/Users/zhao/domo_codex/deep-locality-sensitive-hashing-main/docs/答辩PPT主线.md)
 - [DEVELOPMENT.md](/Users/zhao/domo_codex/deep-locality-sensitive-hashing-main/DEVELOPMENT.md)

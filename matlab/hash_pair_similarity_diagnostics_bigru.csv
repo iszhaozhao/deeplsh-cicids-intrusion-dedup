@@ -1,0 +1,2 @@
+duplicate_count,duplicate_pred_sim_mean,duplicate_pred_sim_median,non_duplicate_count,non_duplicate_pred_sim_mean,non_duplicate_pred_sim_median,non_duplicate_pred_sim_ge_0_9_count,mean_bit_entropy,low_entropy_bit_count,low_entropy_bit_ratio,collapse_warning
+60000,0.9992129720052083,1.0,60000,0.42418146158854164,0.3916015625,30,0.6623679829244159,8,0.0078125,False

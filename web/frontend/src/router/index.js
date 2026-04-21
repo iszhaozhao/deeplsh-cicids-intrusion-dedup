@@ -8,6 +8,7 @@ import TasksView from '../views/TasksView.vue'
 import ResultsView from '../views/ResultsView.vue'
 import StatsView from '../views/StatsView.vue'
 import TrainingView from '../views/TrainingView.vue'
+import ShowcaseView from '../views/ShowcaseView.vue'
 import AppLayout from '../layout/AppLayout.vue'
 
 const router = createRouter({
@@ -21,6 +22,7 @@ const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: '/dashboard', component: DashboardView },
+        { path: '/showcase', component: ShowcaseView },
         { path: '/logs/import', component: LogImportView },
         { path: '/params', component: ParamsView },
         { path: '/tasks', component: TasksView },

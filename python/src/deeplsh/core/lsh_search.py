@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import pandas as pd
 import itertools
@@ -5,12 +6,14 @@ from .similarities import *
 from .deep_hashing_models import *
 from fnvhash import fnv1a_32, fnv1a_64
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = None
+
 #  将原始嵌入向量（embeddings）转换为适配「汉明距离（Hamming Distance）」计算的格式
 def convert_to_hamming(embeddings):
-    s = pd.Series(embeddings.tolist())
-    s = s.apply(lambda x : np.array(list(map(transform, x))))
-    embeddings_hamming = np.vstack(s.tolist())
-    return embeddings_hamming
+    return np.where(embeddings > 0, 1, -1).astype(np.int8)
 
 #  为局部敏感哈希（LSH）生成一组满足「总位数约束」的超参数组合
 def lsh_hyperparams(m) :
@@ -25,15 +28,16 @@ def lsh_hyperparams(m) :
 def create_hash_tables(L, K, b, embeddings_hamming) :
     n_bits = K * b
     hash_tables = {}
-    i = 0
-    while i < L :
+    iterator = range(L)
+    if tqdm is not None:
+        iterator = tqdm(iterator, total=L, desc="LSH hash tables", unit="table")
+    for i in iterator:
         hash_tables['entry_'+str(i)] = {}
         rows, counts = np.unique(embeddings_hamming[:,i*n_bits:(i+1)*n_bits], axis=0, return_counts = True)
         for row, count in zip(rows, counts):
             if count > 1 :
                 indexes = np.where((embeddings_hamming[:,i*n_bits:(i+1)*n_bits] == row).all(axis = 1))[0]
-                hash_tables['entry_'+str(i)][row.tostring()] = indexes  
-        i += 1
+                hash_tables['entry_'+str(i)][row.tobytes()] = indexes  
     
     return hash_tables
 
@@ -42,8 +46,9 @@ def near_duplicates_for_runtime(L, K, b, index, embeddings_hamming, hash_tables)
     n_bits = K * b
     l_indexes = []
     for i in range(L) :
-        if embeddings_hamming[index][i*n_bits:(i+1)*n_bits].tostring() in hash_tables['entry_'+str(i)] :
-            l_indexes.append(list(hash_tables['entry_'+str(i)][embeddings_hamming[index][i*n_bits:(i+1)*n_bits].tostring()]))
+        key = embeddings_hamming[index][i*n_bits:(i+1)*n_bits].tobytes()
+        if key in hash_tables['entry_'+str(i)] :
+            l_indexes.append(list(hash_tables['entry_'+str(i)][key]))
     return l_indexes
 
 #  根据指定的哈希表和查询索引，快速检索出所有可能的近重复样本索引（去重）
@@ -51,8 +56,9 @@ def near_duplicates(L, K, b, index, embeddings_hamming, hash_tables):
     n_bits = K * b
     l_indexes = []
     for i in range(L) :
-        if embeddings_hamming[index][i*n_bits:(i+1)*n_bits].tostring() in hash_tables['entry_'+str(i)] :
-            l_indexes.append(list(hash_tables['entry_'+str(i)][embeddings_hamming[index][i*n_bits:(i+1)*n_bits].tostring()]))
+        key = embeddings_hamming[index][i*n_bits:(i+1)*n_bits].tobytes()
+        if key in hash_tables['entry_'+str(i)] :
+            l_indexes.append(list(hash_tables['entry_'+str(i)][key]))
     set_indexes = set([item for l in l_indexes for item in l])
     return set_indexes
 

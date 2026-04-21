@@ -58,7 +58,9 @@ def main():
     baseline_rows = []
     summary = {"results_dir": results_dir}
 
+    print("stage=eval_load_tokens status=done", flush=True)
     token_sequences = token_flows_df["token_sequence"].fillna("").astype(str).tolist()
+    print("stage=eval_md5 status=start", flush=True)
     md5_hashes = np.asarray([hashlib.md5(sequence.encode("utf-8")).hexdigest() for sequence in token_sequences], dtype=object)
     md5_pair_scores = np.asarray(
         [1.0 if md5_hashes[a] == md5_hashes[b] else 0.0 for a, b in zip(pairs_df["flow_index_1"], pairs_df["flow_index_2"])],
@@ -74,48 +76,55 @@ def main():
         }
     )
     baseline_rows.append(md5_metrics)
+    print("stage=eval_md5 status=done", flush=True)
 
-    simhash = simhash_signatures(token_sequences, n_bits=64)
-    simhash_scores = simhash_pair_scores(simhash, pairs_df, n_bits=64)
+    print("stage=eval_simhash status=start", flush=True)
+    simhash = simhash_signatures(token_sequences, n_bits=64, desc="SimHash signatures")
+    simhash_scores = simhash_pair_scores(simhash, pairs_df, n_bits=64, desc="SimHash pair scores")
     simhash_metrics = best_threshold_metrics(simhash_scores, y_true, thresholds=np.linspace(0.5, 0.98, 17))
     simhash_metrics.update(
         {
             "model": "simhash",
             "compression_rate": _series_collision_rate(simhash),
-            "avg_query_latency_ms": simhash_query_latency_ms(simhash, top_k=args.top_k, limit=args.sample_limit),
+            "avg_query_latency_ms": simhash_query_latency_ms(simhash, top_k=args.top_k, limit=args.sample_limit, desc="SimHash query latency"),
         }
     )
     baseline_rows.append(simhash_metrics)
+    print("stage=eval_simhash status=done", flush=True)
 
+    print("stage=eval_mlp status=start", flush=True)
     mlp_bundle = load_runtime_bundle("mlp")
-    mlp_scores = pair_scores_from_embeddings(mlp_bundle["embeddings"], pairs_df)
+    mlp_scores = pair_scores_from_embeddings(mlp_bundle["embeddings"], pairs_df, desc="MLP pair scores")
     mlp_metrics = best_threshold_metrics(mlp_scores, y_true)
     mlp_metrics.update(
         {
             "model": "baseline-mlp",
-            "compression_rate": binary_hash_collision_rate(mlp_bundle["embeddings_hamming"]),
-            "avg_query_latency_ms": average_query_latency_ms(mlp_bundle, top_k=args.top_k, limit=args.sample_limit),
+            "compression_rate": binary_hash_collision_rate(mlp_bundle["embeddings_hamming"], desc="MLP collision rate"),
+            "avg_query_latency_ms": average_query_latency_ms(mlp_bundle, top_k=args.top_k, limit=args.sample_limit, desc="MLP query latency"),
         }
     )
     baseline_rows.append(mlp_metrics)
+    print("stage=eval_mlp status=done", flush=True)
 
     baseline_df = pd.DataFrame(baseline_rows)
     baseline_path = os.path.join(results_dir, "cicids_baseline_metrics.csv")
     baseline_df.to_csv(baseline_path, index=False)
 
+    print("stage=eval_bigru status=start", flush=True)
     bigru_bundle = load_runtime_bundle("bigru")
-    bigru_scores = pair_scores_from_embeddings(bigru_bundle["embeddings"], pairs_df)
+    bigru_scores = pair_scores_from_embeddings(bigru_bundle["embeddings"], pairs_df, desc="Bi-GRU pair scores")
     bigru_metrics = best_threshold_metrics(bigru_scores, y_true)
     bigru_metrics.update(
         {
             "model": "bigru-deeplsh",
-            "compression_rate": binary_hash_collision_rate(bigru_bundle["embeddings_hamming"]),
-            "avg_query_latency_ms": average_query_latency_ms(bigru_bundle, top_k=args.top_k, limit=args.sample_limit),
+            "compression_rate": binary_hash_collision_rate(bigru_bundle["embeddings_hamming"], desc="Bi-GRU collision rate"),
+            "avg_query_latency_ms": average_query_latency_ms(bigru_bundle, top_k=args.top_k, limit=args.sample_limit, desc="Bi-GRU query latency"),
         }
     )
     bigru_df = pd.DataFrame([bigru_metrics])
     bigru_path = os.path.join(results_dir, "cicids_bigru_metrics.csv")
     bigru_df.to_csv(bigru_path, index=False)
+    print("stage=eval_bigru status=done", flush=True)
 
     all_metrics = pd.concat([baseline_df, bigru_df], ignore_index=True)
     best_row = _to_python_scalars(

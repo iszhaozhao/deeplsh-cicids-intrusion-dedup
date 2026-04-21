@@ -1,6 +1,7 @@
 package com.example.logdedup.controller;
 
 import com.example.logdedup.dto.ExperimentMetricResponse;
+import com.example.logdedup.dto.ExperimentShowcaseResponse;
 import com.example.logdedup.dto.ExperimentSummaryResponse;
 import com.example.logdedup.service.ExperimentService;
 import java.util.List;
@@ -26,5 +27,10 @@ public class ExperimentController {
     @GetMapping("/summary")
     public ExperimentSummaryResponse summary() {
         return experimentService.summary();
+    }
+
+    @GetMapping("/showcase")
+    public ExperimentShowcaseResponse showcase() {
+        return experimentService.showcase();
     }
 }

@@ -21,8 +21,16 @@ from deeplsh.cicids.pipeline import (
     prepared_paths,
     prepare_cicids_dataset,
 )
-from deeplsh.core.deep_hashing_models import intermediate_model_trained, siamese_model, train_siamese_model
+from deeplsh.core.deep_hashing_models import intermediate_model_trained, predict_with_tqdm, siamese_model, train_siamese_model
 from deeplsh.core.lsh_search import convert_to_hamming, create_hash_tables, lsh_hyperparams
+
+
+def _normalize_max_samples(max_samples):
+    if max_samples is None:
+        return None
+    if max_samples <= 0:
+        return None
+    return max_samples
 
 
 def _build_encoder(input_dim: int, hidden_dims, size_hash_vector: int) -> Model:
@@ -50,7 +58,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train DeepLSH on CIC-IDS-2017 numeric flow features.")
     parser.add_argument("--data-repo", default=None, help="Path to CIC-IDS raw CSV directory (default: datasets/cicids/raw)")
     parser.add_argument("--output-dir", default=None, help="Prepared data directory")
-    parser.add_argument("--max-samples", type=int, default=12000)
+    parser.add_argument("--max-samples", type=int, default=12000, help="Maximum raw flows to read when preparing; use 0 for all rows")
     parser.add_argument("--max-pairs", type=int, default=20000)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=256)
@@ -66,6 +74,7 @@ def main():
         args.data_repo = default_raw_data_dir()
     if args.output_dir is None:
         args.output_dir = default_processed_data_dir()
+    args.max_samples = _normalize_max_samples(args.max_samples)
 
     np.random.seed(args.seed)
     tf.random.set_seed(args.seed)
@@ -115,11 +124,14 @@ def main():
         Y_validation,
         batch_size=args.batch_size,
         epochs=args.epochs,
+        progress_desc="MLP train",
     )
 
     intermediate_model = intermediate_model_trained(shared_model, output_layer=-1, CNN=False)
-    embeddings = intermediate_model.predict(feature_matrix, verbose=0)
+    embeddings = predict_with_tqdm(intermediate_model, feature_matrix, batch_size=args.batch_size, desc="MLP embeddings")
+    print("stage=mlp_convert_hamming status=start", flush=True)
     embeddings_hamming = convert_to_hamming(embeddings)
+    print("stage=mlp_convert_hamming status=done", flush=True)
 
     params = lsh_hyperparams(args.m)
     if args.lsh_param_index < 0 or args.lsh_param_index >= len(params):
@@ -141,6 +153,7 @@ def main():
     corpus_path = os.path.join(models_dir, "cicids_flows.csv")
     train_meta_path = os.path.join(models_dir, "cicids_train_metadata.json")
 
+    print("stage=mlp_save_artifacts status=start", flush=True)
     intermediate_model.save(model_path)
     with open(hash_tables_path, "wb") as f:
         pickle.dump(hash_tables, f)
@@ -150,6 +163,7 @@ def main():
 
     prepared = prepared_paths(args.output_dir)
     shutil.copyfile(prepared["preprocessor"], preprocessor_path)
+    print("stage=mlp_save_artifacts status=done", flush=True)
 
     train_meta = {
         "model_type": "mlp",

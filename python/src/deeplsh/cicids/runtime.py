@@ -11,6 +11,17 @@ import pandas as pd
 
 from deeplsh._paths import cicids_artifacts_dir
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = None
+
+
+def _progress(iterable, **kwargs):
+    if tqdm is None:
+        return iterable
+    return tqdm(iterable, **kwargs)
+
 def cosine_01(vector_a: np.ndarray, vector_b: np.ndarray) -> float:
     denom = float(np.linalg.norm(vector_a) * np.linalg.norm(vector_b))
     if denom == 0.0:
@@ -120,32 +131,21 @@ def query_top_k(bundle: Dict[str, object], query_index: int, top_k: int = 10, la
     query_hamming = embeddings_hamming[query_index]
     hit_counts = candidate_hit_counts(query_hamming, hash_tables, L=L, K=K, b=b)
 
-    query_label = str(corpus_df.iloc[query_index]["Label"])
-    candidate_indices = [idx for idx in hit_counts.keys() if idx != query_index]
+    labels = corpus_df["Label"].astype(str).to_numpy()
+    sample_ids = corpus_df["sample_id"].astype(str).to_numpy()
+    source_files = corpus_df["source_file"].astype(str).to_numpy()
+    query_label = str(labels[query_index])
+    candidate_indices = np.asarray([idx for idx in hit_counts.keys() if idx != query_index], dtype=int)
     if label_scope == "same":
-        candidate_indices = [idx for idx in candidate_indices if str(corpus_df.iloc[idx]["Label"]) == query_label]
+        candidate_indices = candidate_indices[labels[candidate_indices] == query_label]
 
-    if not candidate_indices:
-        candidate_indices = [idx for idx in range(corpus_df.shape[0]) if idx != query_index]
+    if candidate_indices.size == 0:
+        candidate_indices = np.arange(corpus_df.shape[0], dtype=int)
+        candidate_indices = candidate_indices[candidate_indices != query_index]
         if label_scope == "same":
-            candidate_indices = [idx for idx in candidate_indices if str(corpus_df.iloc[idx]["Label"]) == query_label]
+            candidate_indices = candidate_indices[labels[candidate_indices] == query_label]
 
-    rows = []
-    for candidate_index in candidate_indices:
-        rows.append(
-            {
-                "query_sample_id": corpus_df.iloc[query_index]["sample_id"],
-                "candidate_sample_id": corpus_df.iloc[candidate_index]["sample_id"],
-                "query_label": query_label,
-                "candidate_label": str(corpus_df.iloc[candidate_index]["Label"]),
-                "hash_bucket_hits": int(hit_counts.get(candidate_index, 0)),
-                "embedding_similarity": cosine_01(embeddings[query_index], embeddings[candidate_index]),
-                "is_same_label": int(str(corpus_df.iloc[candidate_index]["Label"]) == query_label),
-                "source_file": str(corpus_df.iloc[candidate_index]["source_file"]),
-            }
-        )
-
-    if not rows:
+    if candidate_indices.size == 0:
         return pd.DataFrame(
             columns=[
                 "query_sample_id",
@@ -159,37 +159,67 @@ def query_top_k(bundle: Dict[str, object], query_index: int, top_k: int = 10, la
             ]
         )
 
-    return (
-        pd.DataFrame.from_records(rows)
-        .sort_values(by=["hash_bucket_hits", "embedding_similarity", "candidate_sample_id"], ascending=[False, False, True])
-        .head(top_k)
+    query_embedding = embeddings[query_index]
+    candidate_embeddings = embeddings[candidate_indices]
+    denom = np.linalg.norm(candidate_embeddings, axis=1) * np.linalg.norm(query_embedding)
+    similarities = np.zeros(candidate_indices.shape[0], dtype=np.float32)
+    nonzero = denom != 0.0
+    similarities[nonzero] = np.sum(candidate_embeddings[nonzero] * query_embedding, axis=1) / denom[nonzero]
+    similarities = np.clip(similarities, -1.0, 1.0)
+    similarities = ((similarities + 1.0) / 2.0).astype(np.float32)
+    hit_values = np.asarray([hit_counts.get(int(idx), 0) for idx in candidate_indices], dtype=int)
+    order = np.lexsort((candidate_indices, -similarities, -hit_values))[:top_k]
+    selected = candidate_indices[order]
+
+    return pd.DataFrame(
+        {
+            "query_sample_id": sample_ids[query_index],
+            "candidate_sample_id": sample_ids[selected],
+            "query_label": query_label,
+            "candidate_label": labels[selected],
+            "hash_bucket_hits": hit_values[order],
+            "embedding_similarity": similarities[order],
+            "is_same_label": (labels[selected] == query_label).astype(int),
+            "source_file": source_files[selected],
+        }
     )
 
 
-def average_query_latency_ms(bundle: Dict[str, object], top_k: int = 10, label_scope: str = "same", limit: int = 50) -> float:
+def average_query_latency_ms(bundle: Dict[str, object], top_k: int = 10, label_scope: str = "same", limit: int = 50, desc: str = "query latency") -> float:
     corpus_size = bundle["corpus_df"].shape[0]
     sample_count = min(limit, corpus_size)
     if sample_count == 0:
         return 0.0
     indices = np.linspace(0, corpus_size - 1, sample_count, dtype=int)
     durations = []
-    for index in indices:
+    for index in _progress(indices, desc=desc, unit="query"):
         started = time.perf_counter()
         query_top_k(bundle, query_index=int(index), top_k=top_k, label_scope=label_scope)
         durations.append((time.perf_counter() - started) * 1000.0)
     return float(np.mean(durations))
 
 
-def pair_scores_from_embeddings(embeddings: np.ndarray, pairs_df: pd.DataFrame) -> np.ndarray:
+def pair_scores_from_embeddings(embeddings: np.ndarray, pairs_df: pd.DataFrame, batch_size: int = 8192, desc: str = "embedding pair scores") -> np.ndarray:
     indices_1 = pairs_df["flow_index_1"].to_numpy(dtype=int)
     indices_2 = pairs_df["flow_index_2"].to_numpy(dtype=int)
-    return np.asarray([cosine_01(embeddings[a], embeddings[b]) for a, b in zip(indices_1, indices_2)], dtype=np.float32)
+    scores = np.empty(indices_1.shape[0], dtype=np.float32)
+    starts = range(0, indices_1.shape[0], batch_size)
+    for start in _progress(starts, total=int(np.ceil(indices_1.shape[0] / float(batch_size))), desc=desc, unit="batch"):
+        end = min(start + batch_size, indices_1.shape[0])
+        left = embeddings[indices_1[start:end]]
+        right = embeddings[indices_2[start:end]]
+        denom = np.linalg.norm(left, axis=1) * np.linalg.norm(right, axis=1)
+        batch_scores = np.zeros(end - start, dtype=np.float32)
+        nonzero = denom != 0.0
+        batch_scores[nonzero] = np.sum(left[nonzero] * right[nonzero], axis=1) / denom[nonzero]
+        scores[start:end] = ((np.clip(batch_scores, -1.0, 1.0) + 1.0) / 2.0).astype(np.float32)
+    return scores
 
 
-def binary_hash_collision_rate(binary_rows: np.ndarray) -> float:
+def binary_hash_collision_rate(binary_rows: np.ndarray, desc: str = "hash collision rate") -> float:
     if binary_rows.shape[0] == 0:
         return 0.0
-    unique = {row.tobytes() for row in binary_rows}
+    unique = {row.tobytes() for row in _progress(binary_rows, desc=desc, unit="row")}
     return 1.0 - (len(unique) / float(binary_rows.shape[0]))
 
 
@@ -249,29 +279,30 @@ def _simhash_int(token_sequence: str, n_bits: int = 64) -> int:
     return value
 
 
-def simhash_signatures(token_sequences: List[str], n_bits: int = 64) -> np.ndarray:
-    return np.asarray([_simhash_int(sequence, n_bits=n_bits) for sequence in token_sequences], dtype=np.uint64)
+def simhash_signatures(token_sequences: List[str], n_bits: int = 64, desc: str = "simhash signatures") -> np.ndarray:
+    return np.asarray([_simhash_int(sequence, n_bits=n_bits) for sequence in _progress(token_sequences, desc=desc, unit="flow")], dtype=np.uint64)
 
 
-def simhash_pair_scores(signatures: np.ndarray, pairs_df: pd.DataFrame, n_bits: int = 64) -> np.ndarray:
+def simhash_pair_scores(signatures: np.ndarray, pairs_df: pd.DataFrame, n_bits: int = 64, desc: str = "simhash pair scores") -> np.ndarray:
     def sim(a: int, b: int) -> float:
         xor = int(a ^ b)
         distance = bin(xor).count("1")
         return 1.0 - (distance / float(n_bits))
 
+    pair_iter = zip(pairs_df["flow_index_1"].to_numpy(dtype=int), pairs_df["flow_index_2"].to_numpy(dtype=int))
     return np.asarray(
-        [sim(signatures[a], signatures[b]) for a, b in zip(pairs_df["flow_index_1"].to_numpy(dtype=int), pairs_df["flow_index_2"].to_numpy(dtype=int))],
+        [sim(signatures[a], signatures[b]) for a, b in _progress(pair_iter, total=pairs_df.shape[0], desc=desc, unit="pair")],
         dtype=np.float32,
     )
 
 
-def simhash_query_latency_ms(signatures: np.ndarray, top_k: int = 10, limit: int = 50, n_bits: int = 64) -> float:
+def simhash_query_latency_ms(signatures: np.ndarray, top_k: int = 10, limit: int = 50, n_bits: int = 64, desc: str = "simhash query latency") -> float:
     sample_count = min(limit, len(signatures))
     if sample_count == 0:
         return 0.0
     indices = np.linspace(0, len(signatures) - 1, sample_count, dtype=int)
     durations = []
-    for index in indices:
+    for index in _progress(indices, desc=desc, unit="query"):
         started = time.perf_counter()
         sims = []
         for other_index, signature in enumerate(signatures):
