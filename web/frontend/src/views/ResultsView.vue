@@ -11,6 +11,14 @@
             :value="task.id"
           />
         </el-select>
+        <el-select v-model="compareTaskId" class="wide-field" clearable placeholder="选择对比任务（可选）" @change="loadCompareResults">
+          <el-option
+            v-for="task in compareTaskOptions"
+            :key="task.id"
+            :label="`${task.taskName} (#${task.id})`"
+            :value="task.id"
+          />
+        </el-select>
         <el-button @click="loadResults">刷新结果</el-button>
       </div>
 
@@ -20,6 +28,37 @@
         <el-tag type="success">{{ scopeText(selectedTask.labelScope) }}</el-tag>
         <el-tag type="warning">Top {{ selectedTask.topK }}</el-tag>
         <span>查询样本：{{ queryValueText(selectedTask) }}</span>
+      </div>
+
+      <div v-if="selectedTask && selectedCompareTask" class="result-summary result-summary--compare">
+        <el-tag type="danger">{{ modelText(selectedCompareTask.modelType) }}</el-tag>
+        <el-tag type="info">{{ queryModeText(selectedCompareTask.queryMode) }}</el-tag>
+        <el-tag type="success">{{ scopeText(selectedCompareTask.labelScope) }}</el-tag>
+        <el-tag type="warning">Top {{ selectedCompareTask.topK }}</el-tag>
+        <span>对比任务查询样本：{{ queryValueText(selectedCompareTask) }}</span>
+      </div>
+
+      <div v-if="selectedCompareTask" class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-label">Top1 是否一致</div>
+          <div class="metric-value metric-value--compact">{{ comparisonSummary.sameTop1 ? '相同' : '不同' }}</div>
+          <div class="metric-hint">判断两个模型的首个候选是否一致</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Top-K 重合数</div>
+          <div class="metric-value metric-value--compact">{{ comparisonSummary.overlapCount }}/{{ Math.max(results.length, compareResults.length) }}</div>
+          <div class="metric-hint">两个任务返回候选样本的交集规模</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">当前任务特有候选</div>
+          <div class="metric-value metric-value--compact">{{ comparisonSummary.onlyPrimaryCount }}</div>
+          <div class="metric-hint">只在当前任务里出现的候选样本</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">对比任务特有候选</div>
+          <div class="metric-value metric-value--compact">{{ comparisonSummary.onlyCompareCount }}</div>
+          <div class="metric-hint">只在对比任务里出现的候选样本</div>
+        </div>
       </div>
 
       <el-table :data="results" size="small">
@@ -45,6 +84,27 @@
         </el-table-column>
       </el-table>
     </el-card>
+
+    <div v-if="selectedCompareTask" class="panel-grid">
+      <el-card shadow="never">
+        <template #header>当前任务独有候选</template>
+        <el-table :data="onlyPrimaryRows" size="small">
+          <el-table-column prop="candidateSampleId" label="candidate_sample_id" min-width="180" />
+          <el-table-column prop="candidateLabel" label="candidate_label" width="140" />
+          <el-table-column prop="similarityScore" label="embedding_similarity" width="150" />
+          <el-table-column prop="sourceFile" label="source_file" min-width="180" />
+        </el-table>
+      </el-card>
+      <el-card shadow="never">
+        <template #header>对比任务独有候选</template>
+        <el-table :data="onlyCompareRows" size="small">
+          <el-table-column prop="candidateSampleId" label="candidate_sample_id" min-width="180" />
+          <el-table-column prop="candidateLabel" label="candidate_label" width="140" />
+          <el-table-column prop="similarityScore" label="embedding_similarity" width="150" />
+          <el-table-column prop="sourceFile" label="source_file" min-width="180" />
+        </el-table>
+      </el-card>
+    </div>
 
     <div class="panel-grid">
       <el-card shadow="never">
@@ -93,12 +153,38 @@ import http from '../api/http'
 import SimpleChart from '../components/SimpleChart.vue'
 
 const taskId = ref(null)
+const compareTaskId = ref(null)
 const tasks = ref([])
 const results = ref([])
+const compareResults = ref([])
 const drawerVisible = ref(false)
 const currentResult = ref(null)
 
 const selectedTask = computed(() => tasks.value.find((item) => item.id === taskId.value) || null)
+const selectedCompareTask = computed(() => tasks.value.find((item) => item.id === compareTaskId.value) || null)
+const compareTaskOptions = computed(() => tasks.value.filter((item) => item.id !== taskId.value))
+
+const comparisonSummary = computed(() => {
+  const primaryIds = results.value.map((item) => item.candidateSampleId)
+  const compareIds = compareResults.value.map((item) => item.candidateSampleId)
+  const overlap = primaryIds.filter((item) => compareIds.includes(item))
+  return {
+    sameTop1: primaryIds[0] && compareIds[0] && primaryIds[0] === compareIds[0],
+    overlapCount: overlap.length,
+    onlyPrimaryCount: primaryIds.filter((item) => !compareIds.includes(item)).length,
+    onlyCompareCount: compareIds.filter((item) => !primaryIds.includes(item)).length
+  }
+})
+
+const onlyPrimaryRows = computed(() => {
+  const compareIds = new Set(compareResults.value.map((item) => item.candidateSampleId))
+  return results.value.filter((item) => !compareIds.has(item.candidateSampleId))
+})
+
+const onlyCompareRows = computed(() => {
+  const primaryIds = new Set(results.value.map((item) => item.candidateSampleId))
+  return compareResults.value.filter((item) => !primaryIds.has(item.candidateSampleId))
+})
 
 const similarityOption = computed(() => ({
   tooltip: { trigger: 'axis' },
@@ -188,7 +274,20 @@ async function loadResults() {
   results.value = data
 }
 
+async function loadCompareResults() {
+  if (!compareTaskId.value) {
+    compareResults.value = []
+    return
+  }
+  const { data } = await http.get('/results', { params: { taskId: compareTaskId.value } })
+  compareResults.value = data
+}
+
 async function handleTaskChange() {
+  if (compareTaskId.value === taskId.value) {
+    compareTaskId.value = null
+    compareResults.value = []
+  }
   await loadResults()
 }
 

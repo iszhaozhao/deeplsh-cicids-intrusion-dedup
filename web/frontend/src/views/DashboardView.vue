@@ -4,11 +4,7 @@
       <MetricCard label="检索任务数" :value="overview.recentQueryTasks || overview.totalTasks" hint="已创建并可用于近重复检索的任务" />
       <MetricCard label="平均压缩率" :value="`${overview.avgCompressionRate || 0}%`" hint="日志去重后的整体压缩表现" />
       <MetricCard label="平均查询时延" :value="`${overview.avgLatencyMs || 0} ms`" hint="每条候选日志的平均检索耗时" />
-      <MetricCard
-        label="当前最佳模型"
-        :value="experimentSummary.bestModelDisplayName || '暂无离线评估结果'"
-        :hint="experimentSummary.bestModelF1 ? `F1 = ${formatNumber(experimentSummary.bestModelF1)}` : '请准备离线评估结果文件'"
-      />
+      <MetricCard label="近重复结果数" :value="overview.totalResults || 0" hint="当前系统中已生成的候选近重复结果数量" />
     </div>
 
     <div class="panel-grid">
@@ -16,7 +12,7 @@
         <template #header>系统定位</template>
         <div class="detail-stack">
           <div>本系统用于展示 <strong>网络入侵日志去重、近重复检索与告警聚合</strong>，不是普通入侵分类平台。</div>
-          <div>当前推荐演示主线：<strong>检索任务配置 → 任务执行 → 近重复结果 → 实验对比分析</strong></div>
+          <div>当前推荐演示主线：<strong>日志导入 → 检索任务配置 → 任务执行 → 近重复结果展示</strong></div>
           <div>最近任务模型：{{ modelText(overview.latestModelType) || '暂无任务' }}</div>
           <div>最近任务检索范围：{{ scopeText(overview.latestLabelScope) || '-' }}</div>
           <div>最近任务 Top-K：{{ overview.latestTopK ?? '-' }}</div>
@@ -24,13 +20,12 @@
       </el-card>
 
       <el-card shadow="never">
-        <template #header>论文模型摘要</template>
+        <template #header>平台使用提示</template>
         <div class="detail-stack">
-          <div><strong>Baseline：</strong>MLP + DeepLSH</div>
-          <div><strong>主模型：</strong>Bi-GRU + DeepLSH</div>
-          <div><strong>评估来源：</strong>离线评估结果文件</div>
-          <div><strong>最佳模型：</strong>{{ experimentSummary.bestModelDisplayName || '暂无' }}</div>
-          <div><strong>最佳 F1：</strong>{{ experimentSummary.bestModelF1 ? formatNumber(experimentSummary.bestModelF1) : '-' }}</div>
+          <div><strong>任务创建：</strong>先配置模型、查询方式、标签范围和 Top-K，再保存检索任务。</div>
+          <div><strong>日志导入：</strong>为指定任务上传 CSV 文件，给任务挂载待检索日志样本。</div>
+          <div><strong>任务执行：</strong>启动任务后，系统会完成近重复检索并生成候选结果。</div>
+          <div><strong>结果展示：</strong>查看 query / candidate 对、相似度、哈希命中和冗余判定。</div>
         </div>
       </el-card>
     </div>
@@ -93,11 +88,6 @@ const overview = reactive({
   attackTypes: []
 })
 
-const experimentSummary = reactive({
-  bestModelDisplayName: null,
-  bestModelF1: null
-})
-
 const labelStats = ref([])
 
 const performanceOption = computed(() => ({
@@ -153,18 +143,9 @@ function scopeText(scope) {
   return scope || '-'
 }
 
-function formatNumber(value) {
-  return Number(value).toFixed(4)
-}
-
 async function loadOverview() {
   const { data } = await http.get('/stats/overview')
   Object.assign(overview, data)
-}
-
-async function loadSummary() {
-  const { data } = await http.get('/experiments/summary')
-  Object.assign(experimentSummary, data)
 }
 
 async function loadLabels() {
@@ -173,6 +154,6 @@ async function loadLabels() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadOverview(), loadSummary(), loadLabels()])
+  await Promise.all([loadOverview(), loadLabels()])
 })
 </script>
