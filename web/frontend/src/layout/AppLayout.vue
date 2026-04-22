@@ -18,13 +18,10 @@
         active-text-color="#ffffff"
       >
         <el-menu-item index="/dashboard">首页</el-menu-item>
-        <el-menu-item index="/showcase">成果展示</el-menu-item>
         <el-menu-item index="/logs/import">日志导入</el-menu-item>
         <el-menu-item index="/params">检索任务配置</el-menu-item>
         <el-menu-item index="/tasks">任务执行</el-menu-item>
-        <el-menu-item index="/training">训练演示</el-menu-item>
         <el-menu-item index="/results">结果展示</el-menu-item>
-        <el-menu-item index="/stats">实验对比分析</el-menu-item>
       </el-menu>
     </aside>
 
@@ -61,13 +58,10 @@ const auth = useAuthStore()
 
 const titleMap = {
   '/dashboard': 'DeepLSH 系统首页',
-  '/showcase': '成果展示',
   '/logs/import': '日志导入',
   '/params': '检索任务配置',
   '/tasks': '任务执行',
-  '/training': '训练演示',
-  '/results': '近重复结果展示',
-  '/stats': '实验对比分析'
+  '/results': '近重复结果展示'
 }
 
 const pageTitle = computed(() => titleMap[route.path] || '系统页面')

@@ -75,48 +75,67 @@ public class TaskService {
         task.setRunMessage("Invoking Python query: " + pythonQueryService.describeMode(task));
         dedupTaskRepository.save(task);
 
-        LocalDateTime start = LocalDateTime.now();
-        dedupResultRepository.findByTaskIdOrderBySimilarityScoreDesc(taskId)
-            .forEach(dedupResultRepository::delete);
+        List<DedupResult> existingResults = dedupResultRepository.findByTaskIdOrderBySimilarityScoreDesc(taskId);
+        int previousTotalLogs = task.getTotalLogs() == null ? 0 : task.getTotalLogs();
+        int previousRedundantLogs = task.getRedundantLogs() == null ? 0 : task.getRedundantLogs();
+        BigDecimal previousCompressionRate = task.getCompressionRate() == null ? BigDecimal.ZERO : task.getCompressionRate();
+        BigDecimal previousAvgLatencyMs = task.getAvgLatencyMs() == null ? BigDecimal.ZERO : task.getAvgLatencyMs();
+        String previousRunMessage = task.getRunMessage();
 
-        List<PythonQueryRecord> records = pythonQueryService.queryCandidates(task);
-        long reserveId = task.getRowIndex() == null ? 1L : task.getRowIndex() + 1L;
-        int index = 0;
-        for (PythonQueryRecord record : records) {
-            DedupResult result = new DedupResult();
-            result.setTaskId(taskId);
-            result.setLogId((long) (index + 1));
-            result.setAttackType(record.candidateLabel());
-            result.setQuerySampleId(record.querySampleId());
-            result.setQueryLabel(record.queryLabel());
-            result.setCandidateLabel(record.candidateLabel());
-            result.setCandidateSampleId(record.candidateSampleId());
-            result.setHashBucketHits(record.hashBucketHits());
-            result.setIsSameLabel(record.isSameLabel());
-            result.setClusterId("cluster-" + taskId);
-            result.setHashCode(fakeHashCode(record, task.getHashBits() == null ? 32 : task.getHashBits()));
-            result.setSimilarityScore(record.embeddingSimilarity().setScale(4, RoundingMode.HALF_UP));
-            result.setIsRedundant(record.embeddingSimilarity().compareTo(task.getSimilarityThreshold()) >= 0 ? 1 : 0);
-            result.setReserveLogId(reserveId);
-            result.setSourceFile(record.sourceFile());
-            dedupResultRepository.save(result);
-            index++;
+        try {
+            LocalDateTime start = LocalDateTime.now();
+            List<PythonQueryRecord> records = pythonQueryService.queryCandidates(task);
+            long reserveId = task.getRowIndex() == null ? 1L : task.getRowIndex() + 1L;
+            List<DedupResult> newResults = new java.util.ArrayList<>();
+            int index = 0;
+            for (PythonQueryRecord record : records) {
+                DedupResult result = new DedupResult();
+                result.setTaskId(taskId);
+                result.setLogId((long) (index + 1));
+                result.setAttackType(record.candidateLabel());
+                result.setQuerySampleId(record.querySampleId());
+                result.setQueryLabel(record.queryLabel());
+                result.setCandidateLabel(record.candidateLabel());
+                result.setCandidateSampleId(record.candidateSampleId());
+                result.setHashBucketHits(record.hashBucketHits());
+                result.setIsSameLabel(record.isSameLabel());
+                result.setClusterId("cluster-" + taskId);
+                result.setHashCode(fakeHashCode(record, task.getHashBits() == null ? 32 : task.getHashBits()));
+                result.setSimilarityScore(record.embeddingSimilarity().setScale(4, RoundingMode.HALF_UP));
+                result.setIsRedundant(record.embeddingSimilarity().compareTo(task.getSimilarityThreshold()) >= 0 ? 1 : 0);
+                result.setReserveLogId(reserveId);
+                result.setSourceFile(record.sourceFile());
+                newResults.add(result);
+                index++;
+            }
+
+            existingResults.forEach(dedupResultRepository::delete);
+            newResults.forEach(dedupResultRepository::save);
+
+            long total = newResults.size();
+            long redundant = newResults.stream().filter(item -> Integer.valueOf(1).equals(item.getIsRedundant())).count();
+            task.setTotalLogs((int) total);
+            task.setRedundantLogs((int) redundant);
+            task.setCompressionRate(total == 0
+                ? BigDecimal.ZERO
+                : BigDecimal.valueOf(redundant * 100.0 / total).setScale(2, RoundingMode.HALF_UP));
+            long elapsedMs = Math.max(1L, Duration.between(start, LocalDateTime.now()).toMillis());
+            task.setAvgLatencyMs(total == 0
+                ? BigDecimal.ZERO
+                : BigDecimal.valueOf((double) elapsedMs / total).setScale(2, RoundingMode.HALF_UP));
+            task.setStatus("SUCCESS");
+            task.setRunMessage("Task finished with " + pythonQueryService.describeMode(task) + " [" + normalizeModelType(task.getModelType()) + "]");
+            return toResponse(dedupTaskRepository.save(task));
+        } catch (Exception ex) {
+            task.setTotalLogs(previousTotalLogs);
+            task.setRedundantLogs(previousRedundantLogs);
+            task.setCompressionRate(previousCompressionRate);
+            task.setAvgLatencyMs(previousAvgLatencyMs);
+            task.setStatus("FAILED");
+            task.setRunMessage(buildFailureMessage(ex, previousRunMessage));
+            dedupTaskRepository.save(task);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "任务执行失败：" + buildFailureMessage(ex, null), ex);
         }
-
-        long total = dedupResultRepository.countByTaskId(taskId);
-        long redundant = dedupResultRepository.countByTaskIdAndIsRedundant(taskId, 1);
-        task.setTotalLogs((int) total);
-        task.setRedundantLogs((int) redundant);
-        task.setCompressionRate(total == 0
-            ? BigDecimal.ZERO
-            : BigDecimal.valueOf(redundant * 100.0 / total).setScale(2, RoundingMode.HALF_UP));
-        long elapsedMs = Math.max(1L, Duration.between(start, LocalDateTime.now()).toMillis());
-        task.setAvgLatencyMs(total == 0
-            ? BigDecimal.ZERO
-            : BigDecimal.valueOf((double) elapsedMs / total).setScale(2, RoundingMode.HALF_UP));
-        task.setStatus("SUCCESS");
-        task.setRunMessage("Task finished with " + pythonQueryService.describeMode(task) + " [" + normalizeModelType(task.getModelType()) + "]");
-        return toResponse(dedupTaskRepository.save(task));
     }
 
     public TaskResponse getTask(Long taskId) {
@@ -171,5 +190,16 @@ public class TaskService {
 
     private String queryMode(DedupTask task) {
         return task.getSampleId() != null && !task.getSampleId().isBlank() ? "sample_id" : "row_index";
+    }
+
+    private String buildFailureMessage(Exception ex, String fallbackMessage) {
+        String message = ex.getMessage();
+        if (message == null || message.isBlank()) {
+            message = fallbackMessage;
+        }
+        if (message == null || message.isBlank()) {
+            message = ex.getClass().getSimpleName();
+        }
+        return message.length() > 240 ? message.substring(0, 240) : message;
     }
 }

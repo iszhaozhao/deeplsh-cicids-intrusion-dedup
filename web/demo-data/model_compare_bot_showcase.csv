@@ -1,0 +1,12 @@
+group_name,model_type,role,sample_id,label,hash_bucket_hits,embedding_similarity,source_file,explanation
+bot_query_demo,shared,query,Friday-WorkingHours-Morning.pcap_ISCX.csv#111118,Bot,,,Friday-WorkingHours-Morning.pcap_ISCX.csv,用于对比 MLP 与 Bi-GRU 的同一条查询样本
+bot_query_demo,mlp,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#107999,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,MLP 返回的 Top1 候选
+bot_query_demo,mlp,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#114165,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,MLP 返回的 Top2 候选
+bot_query_demo,mlp,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#105636,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,MLP 返回的 Top3 候选
+bot_query_demo,mlp,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#108197,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,MLP 返回的 Top4 候选
+bot_query_demo,mlp,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#82134,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,MLP 返回的 Top5 候选
+bot_query_demo,bigru,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#114838,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,Bi-GRU 返回的 Top1 候选
+bot_query_demo,bigru,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#109634,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,Bi-GRU 返回的 Top2 候选
+bot_query_demo,bigru,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#96671,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,Bi-GRU 返回的 Top3 候选
+bot_query_demo,bigru,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#103569,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,Bi-GRU 返回的 Top4 候选
+bot_query_demo,bigru,candidate,Friday-WorkingHours-Morning.pcap_ISCX.csv#82202,Bot,4,1.0,Friday-WorkingHours-Morning.pcap_ISCX.csv,Bi-GRU 返回的 Top5 候选

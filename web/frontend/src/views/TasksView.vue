@@ -118,6 +118,7 @@ async function runTask(id) {
     ElMessage.success('检索任务已执行')
     await loadTasks()
   } catch (error) {
+    await loadTasks()
     ElMessage.error(error?.response?.data?.message || '任务执行失败')
   }
 }

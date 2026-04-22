@@ -143,6 +143,10 @@ body {
   margin: 10px 0 6px;
 }
 
+.metric-value--compact {
+  font-size: 22px;
+}
+
 .metric-hint {
   font-size: 12px;
   color: #94a3b8;
@@ -196,6 +200,12 @@ body {
 
 .result-summary span {
   font-size: 14px;
+}
+
+.result-summary--compare {
+  margin-top: -6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
 }
 
 .login-page {
